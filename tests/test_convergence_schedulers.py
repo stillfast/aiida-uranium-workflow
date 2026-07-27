@@ -10,10 +10,10 @@ pytest_plugins = ["aiida.tools.pytest_fixtures"]
 from aiida import orm
 from aiida_pseudo.data.pseudo import UpfData
 from aiida_pseudo.groups.family import PseudoPotentialFamily
-from aiida_uranium_workflow.input_builders.convergence_abacus import (
+from aiida_uranium_workflow.input_builders.convergence.abacus import (
     AbacusConvergenceAdapter,
 )
-from aiida_uranium_workflow.input_builders.convergence_vasp import (
+from aiida_uranium_workflow.input_builders.convergence.vasp import (
     VaspConvergenceAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import _WORKFLOW_REGISTRY

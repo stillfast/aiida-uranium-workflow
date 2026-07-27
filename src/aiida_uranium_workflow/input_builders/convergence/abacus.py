@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import SoftwareAdapter
+from ..base import SoftwareAdapter
 from typing import Any, List, Tuple
 
 

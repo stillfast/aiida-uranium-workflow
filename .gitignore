@@ -12,6 +12,7 @@ build/
 .aiida/
 *.swp
 *.swo
+.trae/
 
 # AiiDA dumped workchain outputs
 .temporary/

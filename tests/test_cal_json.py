@@ -24,7 +24,7 @@ from aiida_uranium_workflow.utils.cal_json import (
     build_cal_json,
     write_cal_json,
 )
-from aiida_uranium_workflow.utils.copy_calc import (
+from aiida_uranium_workflow.utils.json_collect import (
     _looks_like_uuid,
     collect_identifiers_from_json,
     collect_node_ids_from_json,

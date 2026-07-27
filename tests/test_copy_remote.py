@@ -696,9 +696,11 @@ class TestCopySubcommandCli:
         # Missing -i / -o
         with pytest.raises(SystemExit):
             parser.parse_args(["copy", "--method", "smear"])
-        # Missing --method
-        with pytest.raises(SystemExit):
-            parser.parse_args(["copy", "-i", "x.json", "-o", "x"])
+        # --method is optional since v0.2: it is now resolved from
+        # input.json["workflow"] (run) or output.json["workflow"]
+        # (report / copy / archive). Parse must succeed without it.
+        ns = parser.parse_args(["copy", "-i", "x.json", "-o", "x"])
+        assert ns.method is None
 
     def test_full_command_parses(self, tmp_path):
         from aiida_uranium_workflow.cli._common import build_unified_parser

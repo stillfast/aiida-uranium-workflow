@@ -12,10 +12,10 @@ generic :func:`schedulers.get_orchestrator` can find it.
 
 from __future__ import annotations
 
-from aiida_uranium_workflow.input_builders.convergence_abacus import (
+from aiida_uranium_workflow.input_builders.convergence.abacus import (
     AbacusConvergenceAdapter,
 )
-from aiida_uranium_workflow.input_builders.convergence_vasp import (
+from aiida_uranium_workflow.input_builders.convergence.vasp import (
     VaspConvergenceAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (

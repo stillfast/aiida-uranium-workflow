@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import SoftwareAdapter
+from ..base import SoftwareAdapter
 from typing import Any, List, Tuple
 
 _ABACUS_SMEAR_KW = {
@@ -12,7 +12,7 @@ _ABACUS_SMEAR_KW = {
 }
 
 # Conversion: canonical sigma is in eV; ABACUS wants Ry.
-_EV_TO_RY = 1 / 13.6057039763
+_EV_TO_RY = 1 / 13.605693
 
 
 class AbacusAdapter(SoftwareAdapter):

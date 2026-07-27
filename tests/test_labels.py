@@ -4,7 +4,7 @@ Two halves:
 
 1. The pure ``format_*_label`` helpers (no AiiDA required) — make sure
    the exact strings the WorkChains build in their ``submit_children``
-   outline / ``copy_calc._label_for_*`` are reproduced, including:
+   outline (and previously ``copy_calc._label_for_*``) are reproduced, including:
    * ABACUS ``ecutwfc_<v>_kpoints_distance_<v>`` /
      ``ecutwfc_<v>_kpoints_<NxNxN>``
    * VASP ``kpoints_spacing_<v>_encut_<v>`` /
@@ -44,7 +44,8 @@ from aiida_uranium_workflow.utils.labels import (
 
 
 class TestFormatAbacusSmearLabel:
-    """Matches ``copy_calc._label_for_abacus`` byte-for-byte."""
+    """Matches the format previously exposed via
+    ``copy_calc._label_for_abacus`` byte-for-byte."""
 
     @pytest.mark.parametrize(
         "method,sigma,expected",
@@ -59,7 +60,7 @@ class TestFormatAbacusSmearLabel:
         assert format_abacus_smear_label(method, sigma) == expected
 
     def test_negative_sigma(self):
-        # The legacy _label_for_abacus wraps the dash with the underscore
+        # The legacy ``_label_for_abacus`` wraps the dash with the underscore
         # already produced by ``.replace(".", "_")``:
         # ``"-0_060000".replace("-", "m") == "m0_060000"`` so the full
         # label keeps the underscore between ``sigma`` and the sign.
@@ -70,7 +71,8 @@ class TestFormatAbacusSmearLabel:
 
 
 class TestFormatVaspSmearLabel:
-    """Matches ``copy_calc._label_for_vasp`` byte-for-byte."""
+    """Matches the format previously exposed via
+    ``copy_calc._label_for_vasp`` byte-for-byte."""
 
     @pytest.mark.parametrize(
         "ismear,sigma,expected",
@@ -374,7 +376,9 @@ class TestResolveVaspConvergence:
 
 
 class TestResolveSmearRegression:
-    """Smear labels must match what ``copy_calc._label_for_*`` emits."""
+    """Smear labels must match what the centralised
+    ``utils.labels.format_*_smear_label`` helpers emit (previously
+    re-exported as ``copy_calc._label_for_*``)."""
 
     def test_abacus_smear_via_inputs(self):
         parameters = _FakeDict(
@@ -411,11 +415,17 @@ class TestResolveSmearRegression:
         )
 
     def test_pure_formatter_matches_copy_calc(self):
-        """Direct exercise of the format helper used by ``copy_calc._label_for_abacus``."""
-        from aiida_uranium_workflow.utils.copy_calc import _label_for_abacus, _label_for_vasp
+        """Direct exercise of the format helper previously exposed via
+        ``copy_calc._label_for_abacus``. After the copy_calc refactor
+        callers should reach the same formatter through
+        :mod:`aiida_uranium_workflow.utils.labels`."""
+        from aiida_uranium_workflow.utils.labels import (
+            format_abacus_smear_label,
+            format_vasp_smear_label,
+        )
 
-        assert _label_for_abacus("mp", 0.06) == "smearing_mp_sigma_0_060000"
-        assert _label_for_vasp(2, 0.06) == "ismear_2_sigma_0_060000"
+        assert format_abacus_smear_label("mp", 0.06) == "smearing_mp_sigma_0_060000"
+        assert format_vasp_smear_label(2, 0.06) == "ismear_2_sigma_0_060000"
 
 
 class TestResolveMagmom:

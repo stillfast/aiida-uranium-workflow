@@ -3,6 +3,7 @@
 Layout written (current)::
 
     {
+        "workflow": "<method_name>",
         "<backend>": {
             "<workflow_key>": {
                 "<preset_name>": "<uuid>",
@@ -13,9 +14,16 @@ Layout written (current)::
         ...
     }
 
+The top-level ``"workflow"`` key carries the canonical method name
+(``"smear"`` / ``"convergence"`` / ``"magmom"`` / ``"base"``) so the
+unified CLI can later re-derive the method without asking the user
+again. Legacy files written before this field existed remain readable:
+the parser falls back to scanning the second-level keys.
+
 Example for the smear workflow::
 
     {
+        "workflow": "smear",
         "abacus": {"smear": {"lcao": "8c0f...-uuid", "pw": "33e1...-uuid"}},
         "vasp":   {"vasp":  {"test": "5f4a...-uuid"}}
     }
@@ -23,8 +31,8 @@ Example for the smear workflow::
 The leaf identifiers are top-level WorkChain UUID strings (the canonical
 AiiDA identifier that survives profile re-imports). Legacy files written
 with integer pk leaves are still readable; see
-:func:`collect_pks_from_json` / :func:`read_unique_pks` in
-``utils/copy_calc.py`` and ``cli/_common.py`` for the parser side.
+:func:`collect_pks_from_json` / :func:`collect_identifiers_from_json` in
+``utils/json_collect.py`` and ``cli/_common.py`` for the parser side.
 
 The mapping ``backend -> workflow_key`` defaults to the smear layout
 (abacus→smear, vasp→vasp) but can be customised per workflow.
@@ -76,12 +84,16 @@ def build_cal_json(
     *,
     workflow: str,
     backend_to_key: Mapping[str, str] | None = None,
-) -> "OrderedDict[str, OrderedDict[str, OrderedDict[str, str | int]]]":
+) -> "OrderedDict[str, Any]":
     """Group ``submitted`` jobs into the nested ``final_cal.json`` layout.
 
     The structure is::
 
-        {backend: {key: {preset_name: identifier, ...}, ...}, ...}
+        {
+          "workflow": "<name>",
+          <backend>: {<key>: {<preset_name>: <identifier>, ...}, ...},
+          ...
+        }
 
     where ``key`` is the second-level dict name (``"smear"`` for abacus
     smear, ``"vasp"`` for vasp smear, …) and ``identifier`` is the
@@ -90,9 +102,8 @@ def build_cal_json(
     another — this is intentional, callers usually only have one
     WorkChain per preset.
     """
-    out: "OrderedDict[str, OrderedDict[str, OrderedDict[str, str | int]]]" = (
-        OrderedDict()
-    )
+    out: "OrderedDict[str, Any]" = OrderedDict()
+    out["workflow"] = workflow
     mapping = backend_to_key or {}
     for job in submitted:
         backend = job.backend

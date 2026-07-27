@@ -7,7 +7,7 @@ Reads the per-backend ``mag_list`` from the workflow protocol section
 
 from __future__ import annotations
 
-from .base import SoftwareAdapter
+from ..base import SoftwareAdapter
 from typing import Any, Dict, List
 
 

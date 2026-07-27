@@ -2,10 +2,9 @@
 
 This module deliberately stays side-effect free (except for the
 filesystem copy itself) so each function can be unit-tested in
-isolation. The legacy ``utils/copy_calc.copy_targets`` scp-based
-implementation is left untouched for backwards compatibility; the
-copy command uses the AiiDA :class:`~aiida.transports.Transport` API
-through :func:`copy_remote_folder_to_local` instead.
+isolation. The copy command uses the AiiDA
+:class:`~aiida.transports.Transport` API through
+:func:`copy_remote_folder_to_local` instead of an scp shell-out.
 
 The high-level workflow is:
 
@@ -30,7 +29,7 @@ from __future__ import annotations
 
 from aiida import load_profile
 from aiida.orm import CalcJobNode, load_node, Node, RemoteData, WorkChainNode
-from aiida_uranium_workflow.utils.copy_calc import collect_identifiers_from_json
+from aiida_uranium_workflow.utils.json_collect import collect_identifiers_from_json
 from aiida_uranium_workflow.utils.labels import resolve_label
 
 from dataclasses import dataclass, field
@@ -556,6 +555,4 @@ __all__ = [
     "execute_copy_plan",
     "load_copy_plan",
     "resolve_label",
-    # Re-exported for callers that already imported from copy_calc
-    "collect_identifiers_from_json",
 ]

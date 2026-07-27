@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiida import orm
-from aiida.engine import append_, calcfunction, WorkChain
+from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
 
@@ -198,13 +198,37 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
+    from aiida_uranium_workflow.utils.parser_energy_time import fetch_abacus
+
     total_energy = {}
     num_atoms = {}
     total_energy_per_atom = {}
+    wall_time_seconds = {}
+    status = {}
 
     for pk in child_pks.get_list():
         child = load_node(pk)
         if not child.is_finished_ok:
+            # Even failed children get a status row in the report.
+            param_dict = child.inputs.abacus.parameters.get_dict()
+            input_block = param_dict.get("input", {})
+            ecutwfc = input_block.get("ecutwfc")
+            if hasattr(child.inputs, "kpoints_distance"):
+                kpoints_val = child.inputs.kpoints_distance.value
+                label = f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(
+                    ".", "_"
+                )
+            elif hasattr(child.inputs, "kpoints"):
+                kpoints_mesh = child.inputs.kpoints.get_kpoints_mesh()[0]
+                kpoints_str = "x".join(str(k) for k in kpoints_mesh)
+                label = f"ecutwfc_{ecutwfc}_kpoints_{kpoints_str}".replace(".", "_")
+            else:
+                continue
+            status[label] = (
+                int(child.exit_status)
+                if child.exit_status is not None
+                else -1
+            )
             continue
         param_dict = child.inputs.abacus.parameters.get_dict()
         input_block = param_dict.get("input", {})
@@ -224,14 +248,25 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
 
         structure = child.inputs.abacus.structure
         n_atoms = len(structure.sites)
-        misc = child.outputs.misc.get_dict()
-        total_energy[label] = misc["total_energy"]
+        # Use the shared parser so the energy / wall-time logic is
+        # identical to the smear/magmom workflows.
+        energy, wall_time = fetch_abacus(child)
+        total_energy[label] = energy
+        wall_time_seconds[label] = wall_time
         num_atoms[label] = n_atoms
-        total_energy_per_atom[label] = total_energy[label] / num_atoms[label]
+        if energy is not None:
+            total_energy_per_atom[label] = energy / n_atoms
+        status[label] = (
+            int(child.exit_status)
+            if child.exit_status is not None
+            else -1
+        )
     result = {
         "total_energy": total_energy,
         "num_atoms": num_atoms,
         "total_energy_per_atom": total_energy_per_atom,
+        "wall_time_seconds": wall_time_seconds,
+        "status": status,
     }
     if kpoints_mode is not None:
         result["kpoints_mode"] = str(kpoints_mode)

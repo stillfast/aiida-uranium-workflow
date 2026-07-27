@@ -14,8 +14,6 @@ from aiida_uranium_workflow.cli._common import (
     build_unified_parser,
     collect_pk_map,
     default_result_path,
-    read_unique_node_identifiers,
-    read_unique_pks,
     get_method_spec,
     parse_method,
 )
@@ -174,84 +172,6 @@ class TestMethodSpecBackendToKey:
         spec = METHOD_SPECS[method]
         assert "abacus" in spec.backend_to_key
         assert "vasp" in spec.backend_to_key
-
-
-class TestReadUniqueNodeIdentifiers:
-    """``read_unique_node_identifiers`` handles both PK and UUID payloads."""
-
-    def test_legacy_pk_payload(self, tmp_path, capsys):
-        p = tmp_path / "output.json"
-        p.write_text(json.dumps({"abacus": {"smear": {"lcao": 1, "pw": 2}}}))
-        ids = read_unique_node_identifiers(p, source="smear-report")
-        # The output JSON's integer pks are stringified in the result.
-        assert ids == ["1", "2"]
-        # No warnings printed for a successful read.
-        captured = capsys.readouterr()
-        assert "No node identifiers" not in captured.err
-
-    def test_modern_uuid_payload(self, tmp_path):
-        p = tmp_path / "output.json"
-        uuids = {
-            "pw": "8c0fe1a9-1234-4abc-9def-0a1b2c3d4e5f",
-            "pw_r": "33e15b7c-9f8a-4b6c-8123-0f9e8d7c6b5a",
-        }
-        p.write_text(json.dumps({"abacus": {"convergence": uuids}}))
-        ids = read_unique_node_identifiers(p, source="convergence-report")
-        assert ids == sorted(uuids.values())
-
-    def test_mixed_payload_yields_everything_as_strings(self, tmp_path):
-        p = tmp_path / "output.json"
-        p.write_text(
-            json.dumps(
-                {
-                    "abacus": {
-                        "smear": {
-                            "lcao": 1,
-                            "pw": "8c0fe1a9-1234-4abc-9def-0a1b2c3d4e5f",
-                        }
-                    }
-                }
-            )
-        )
-        ids = read_unique_node_identifiers(p, source="smear-report")
-        assert "1" in ids
-        assert "8c0fe1a9-1234-4abc-9def-0a1b2c3d4e5f" in ids
-
-    def test_missing_file_returns_empty(self, tmp_path, capsys):
-        ids = read_unique_node_identifiers(
-            tmp_path / "nope.json", source="smear-report"
-        )
-        assert ids == []
-        captured = capsys.readouterr()
-        assert "not found" in captured.err
-
-    def test_invalid_json_returns_empty(self, tmp_path, capsys):
-        p = tmp_path / "bad.json"
-        p.write_text("not json")
-        ids = read_unique_node_identifiers(p, source="smear-report")
-        assert ids == []
-        captured = capsys.readouterr()
-        assert "Failed to parse" in captured.err
-
-
-class TestReadUniquePksBackwardCompat:
-    """``read_unique_pks`` still picks up integer pks in legacy payloads."""
-
-    def test_pk_payload(self, tmp_path, capsys):
-        p = tmp_path / "output.json"
-        p.write_text(json.dumps({"abacus": {"smear": {"lcao": 1, "pw": 2}}}))
-        pks = read_unique_pks(p, source="smear-archive")
-        assert pks == [1, 2]
-
-    def test_uuid_payload_returns_empty(self, tmp_path):
-        p = tmp_path / "output.json"
-        p.write_text(
-            json.dumps(
-                {"abacus": {"convergence": {"pw": "8c0fe1a9-1234-4abc-9def-0a1b2c3d4e5f"}}}
-            )
-        )
-        # Legacy helper doesn't understand UUIDs: returns empty.
-        assert read_unique_pks(p, source="smear-archive") == []
 
 
 class TestShortIdPassthrough:

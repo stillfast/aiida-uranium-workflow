@@ -24,10 +24,10 @@ reconciliation is impossible we fall back through:
 
 The label formats intentionally mirror each WorkChain's
 ``submit_children`` builders:
-* smear labels stay on the legacy ``copy_calc._label_for_*`` format
-  (``smearing_<method>_sigma_<v>`` / ``ismear_<n>_sigma_<v>``) so the
-  scp-based legacy script and the new ``aiida-uranium copy`` command
-  share the same leaf name.
+* smear labels follow the canonical format
+  (``smearing_<method>_sigma_<v>`` / ``ismear_<n>_sigma_<v>``) — this
+  is the single source of truth for the new ``aiida-uranium copy``
+  command and any future re-exports.
 * convergence labels mirror the workflow's exact
   ``f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(".", "_")``
   / ``f"kpoints_spacing_{kpoints_val}_encut_{encut}".replace(".", "_")``
@@ -41,8 +41,8 @@ Public surface
 --------------
 * :func:`resolve_label` — top-level entry point used by
   ``utils/copy_remote.iter_copy_targets``.
-* :func:`format_*_label` — pure helpers; reused by ``copy_calc`` to
-  avoid rule drift and individually unit-testable.
+* :func:`format_*_label` — pure helpers; the single source of truth for
+  label formatting, individually unit-testable.
 """
 
 from __future__ import annotations
@@ -83,7 +83,6 @@ _REJECTED_GENERIC_CLASS_NAMES: frozenset[str] = frozenset(
 def _sanitise_decimal(value: float | int) -> str:
     """Format a float as a smear-style filesystem-safe token.
 
-    Mirrors ``copy_calc._label_for_*`` byte-for-byte:
     ``"%.6f"`` → ``replace(".", "_")`` → ``replace("-", "m")``.
     Used by ``smear`` only; convergence labels go through
     :func:`_decimal_token_short` which matches the workflow's submit
@@ -103,12 +102,12 @@ def _decimal_token_short(value: float | int) -> str:
 
 
 def format_abacus_smear_label(method: str, sigma: float | int) -> str:
-    """``smearing_<method>_sigma_<value>`` (matches ``copy_calc._label_for_abacus``)."""
+    """``smearing_<method>_sigma_<value>``."""
     return f"smearing_{method}_sigma_{_sanitise_decimal(sigma)}"
 
 
 def format_vasp_smear_label(ismear: int, sigma: float | int) -> str:
-    """``ismear_<n>_sigma_<value>`` (matches ``copy_calc._label_for_vasp``)."""
+    """``ismear_<n>_sigma_<value>``."""
     return f"ismear_{int(ismear)}_sigma_{_sanitise_decimal(sigma)}"
 
 

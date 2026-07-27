@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiida import orm
-from aiida.engine import append_, calcfunction, WorkChain
+from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
 
@@ -149,13 +149,26 @@ def parse_and_gather_magmom_results(child_pks):
     """
     from aiida.orm import load_node
 
+    from aiida_uranium_workflow.utils.parser_energy_time import fetch_abacus
+
     magnetism = {}
     final_magnetism = {}
     nspin = {}
     final_energy = {}
+    wall_time_seconds = {}
+    status = {}
 
     for pk in child_pks.get_list():
         child = load_node(pk)
+        # Capture exit status for every submitted child, even those
+        # that did not finish OK. ``exit_status`` is ``None`` for
+        # unfinished processes; we render that as ``-1``.
+        status[pk] = (
+            int(child.exit_status)
+            if child.exit_status is not None
+            else -1
+        )
+
         if not child.is_finished_ok:
             continue
 
@@ -170,13 +183,20 @@ def parse_and_gather_magmom_results(child_pks):
 
         magnetism[pk] = misc.get("magnetism")
         final_magnetism[pk] = misc.get("final_magnetism")
-        final_energy[pk] = misc.get("total_energy")
+
+        # Use the shared parser so energy + wall-time is collected in
+        # the same way as the smear / convergence workflows.
+        energy, wall_time = fetch_abacus(child)
+        final_energy[pk] = energy
+        wall_time_seconds[pk] = wall_time
 
     result = {
         "magnetism": magnetism,
         "final_magnetism": final_magnetism,
         "nspin": nspin,
         "final_energy": final_energy,
+        "wall_time_seconds": wall_time_seconds,
+        "status": status,
     }
     return orm.Dict(result)
 

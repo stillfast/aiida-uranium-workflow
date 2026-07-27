@@ -3,12 +3,9 @@
 
 Goals:
 
-* Centralise the argparse boilerplate shared by the ``*_run.py`` shims
-  (base, smear, convergence, magmom).
 * Centralise the WorkChain detection / report-writing pipeline shared
-  by the ``*_report.py`` shims (base, smear, convergence, magmom).
-* Provide a single ``read_unique_pks`` helper for CLI tools that walk a
-  ``final_cal.json``-style file (smear_report batch mode + smear_archive).
+  by the unified ``aiida-uranium {run,report,archive,copy}`` entry
+  point (base, smear, convergence, magmom).
 * Expose a :data:`METHOD_SPECS` registry that drives the unified
   ``aiida-uranium {run,report,archive}`` entry point — adding a new
   method only requires extending this dict.
@@ -24,10 +21,6 @@ from aiida import load_profile
 from aiida.orm import load_node
 from aiida_uranium_workflow.schedulers import get_orchestrator
 from aiida_uranium_workflow.utils.config import ConfigLoader
-from aiida_uranium_workflow.utils.copy_calc import (
-    collect_identifiers_from_json,
-    collect_pks_from_json,
-)
 from aiida_uranium_workflow.utils.report.convergence import (
     generate_report as generate_convergence_report,
 )
@@ -133,68 +126,86 @@ def get_method_spec(method: str) -> MethodSpec:
 
 
 # ---------------------------------------------------------------------------
-# Run-script helpers (smear_run / convergence_run / magmom_run)
+# Method resolution (CLI <-> input.json <-> output.json)
 # ---------------------------------------------------------------------------
 
 
-def build_run_arg_parser(
-    prog: str,
-    description: str,
-    *,
-    with_save_cal: bool = False,
-) -> argparse.ArgumentParser:
-    """Build the standard ``-i / -p / --only`` argument parser for ``*_run.py``.
+def _read_json_workflow_field(path: str | Path | None) -> str | None:
+    """Read a JSON file's top-level ``"workflow"`` field if present.
 
-    Args:
-        prog: Program name (shown by ``--help``).
-        description: One-line summary shown by ``--help``.
-        with_save_cal: When ``True`` add ``--save-cal`` / ``--no-save-cal``
-            used by ``smear_run`` to control the optional
-            ``final_cal.json`` write. Convergence and magmom runs do not
-            need that flag because they don't persist the pk map.
+    Returns ``None`` when the file is missing, malformed, or doesn't
+    contain a non-empty string ``"workflow"`` key. Defensive against
+    bad paths so callers can simply chain sources without try/except.
     """
-    p = argparse.ArgumentParser(prog=prog, description=description)
-    p.add_argument(
-        "-i",
-        "--input",
-        dest="input_json",
-        required=True,
-        help="Path to the input JSON file (see example/input.json).",
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("workflow")
+    return value if isinstance(value, str) and value else None
+
+
+def resolve_method(
+    *,
+    cli_method: str | None,
+    input_json: str | Path | None = None,
+    output_json: str | Path | None = None,
+) -> str:
+    """Pick the canonical method name from the available sources.
+
+    Resolution order (highest priority first):
+
+    1. ``cli_method`` (explicit ``--method`` flag) — if provided, wins.
+    2. ``output_json["workflow"]`` (modern output.json files) — used by
+       ``report`` / ``copy`` / ``archive`` which never see input.json.
+    3. ``input_json["workflow"]`` (used by ``run``).
+
+    Raises :class:`ValueError` if no source can determine a valid method.
+    No fallback inference — callers must provide a method explicitly.
+    """
+    if cli_method:
+        if cli_method not in METHOD_SPECS:
+            raise ValueError(
+                f"Unknown method '{cli_method}'. "
+                f"Supported: {list(METHOD_SPECS)}"
+            )
+        return cli_method
+
+    workflow = _read_json_workflow_field(output_json)
+    if workflow:
+        if workflow not in METHOD_SPECS:
+            raise ValueError(
+                f"output.json['workflow']='{workflow}' is not a known method. "
+                f"Supported: {list(METHOD_SPECS)}"
+            )
+        return workflow
+
+    workflow = _read_json_workflow_field(input_json)
+    if workflow:
+        if workflow not in METHOD_SPECS:
+            raise ValueError(
+                f"input.json['workflow']='{workflow}' is not a known method. "
+                f"Supported: {list(METHOD_SPECS)}"
+            )
+        return workflow
+
+    raise ValueError(
+        "Cannot determine the workflow method. Provide --method, or use an "
+        "input.json / output.json that contains a 'workflow' field. "
+        f"Supported: {list(METHOD_SPECS)}"
     )
-    p.add_argument(
-        "-p",
-        "--profile",
-        dest="profile",
-        default=None,
-        help="AiiDA profile name (overrides input.json['profile']).",
-    )
-    p.add_argument(
-        "--only",
-        choices=("abacus", "vasp"),
-        default=None,
-        help="Restrict to one backend (default: both requested in JSON).",
-    )
-    if with_save_cal:
-        p.add_argument(
-            "--save-cal",
-            dest="save_cal",
-            default=None,
-            metavar="PATH",
-            help=(
-                "Write a final_cal.json-style mapping of submitted pks. "
-                "Default: <input_dir>/output.json. The file is created "
-                "(or overwritten) only after at least one WorkChain has "
-                "been submitted successfully."
-            ),
-        )
-        p.add_argument(
-            "--no-save-cal",
-            dest="save_cal",
-            action="store_const",
-            const=False,
-            help="Skip writing the output.json pk map.",
-        )
-    return p
+
+
+# ---------------------------------------------------------------------------
+# Workflow execution
+# ---------------------------------------------------------------------------
 
 
 def execute_workflow(
@@ -221,84 +232,6 @@ def execute_workflow(
     backends = (only,) if only else None
     orchestrator = get_orchestrator(bundle, backends=backends)
     return orchestrator.run_with_jobs()
-
-
-# ---------------------------------------------------------------------------
-# JSON-pk helpers (smear_report batch mode + smear_archive + unified report)
-# ---------------------------------------------------------------------------
-
-
-def read_unique_pks(
-    input_path: Path,
-    *,
-    source: str,
-) -> list[int]:
-    """Read a nested JSON pk tree and return ``sorted(set(pks))``.
-
-    ``source`` is used purely to label error messages (``smear_archive``,
-    ``smear_report``, …). Returns an empty list when the file is
-    missing, fails to parse, or contains no integer leaves — callers
-    decide how to react.
-
-    .. note::
-       Newer ``output.json`` files store WorkChain UUIDs in the leaves
-       (see :func:`aiida_uranium_workflow.utils.cal_json.build_cal_json`).
-       This helper still accepts the legacy pk-only form; the modern,
-       UUID-aware entry point is :func:`read_unique_node_identifiers`.
-    """
-    if not input_path.is_file():
-        print(f"[{source}] Input JSON not found: {input_path}", file=sys.stderr)
-        return []
-    try:
-        data = json.loads(input_path.read_text())
-    except json.JSONDecodeError as e:
-        print(
-            f"[{source}] Failed to parse JSON {input_path}: {e}",
-            file=sys.stderr,
-        )
-        return []
-    pks = sorted(set(collect_pks_from_json(data)))
-    if not pks:
-        print(
-            f"[{source}] No integer pks found in {input_path}.",
-            file=sys.stderr,
-        )
-    return pks
-
-
-def read_unique_node_identifiers(
-    input_path: Path,
-    *,
-    source: str,
-) -> list[str]:
-    """Read an ``output.json`` and return ``sorted(set(node identifiers))``.
-
-    Each identifier is either an integer pk (legacy ``output.json``
-    files) or a WorkChain UUID string (modern files). AiiDA's
-    ``load_node(...)`` accepts both, so the returned list can be
-    consumed directly by the report / archive pipelines.
-
-    ``source`` is used for log labels (e.g. ``smear-report``). Returns
-    an empty list when the file is missing / malformed / empty.
-    """
-    if not input_path.is_file():
-        print(f"[{source}] Input JSON not found: {input_path}", file=sys.stderr)
-        return []
-    try:
-        data = json.loads(input_path.read_text())
-    except json.JSONDecodeError as e:
-        print(
-            f"[{source}] Failed to parse JSON {input_path}: {e}",
-            file=sys.stderr,
-        )
-        return []
-    ids = sorted(set(collect_identifiers_from_json(data)))
-    if not ids:
-        print(
-            f"[{source}] No node identifiers (pk or uuid) found in {input_path}.",
-            file=sys.stderr,
-        )
-    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -504,8 +437,11 @@ def build_unified_parser(
     run_p.add_argument(
         "--method",
         type=parse_method,
-        required=True,
-        help="Workflow method: base / smear / convergence / magmom.",
+        default=None,
+        help=(
+            "Workflow method: base / smear / convergence / magmom. "
+            "If omitted, the value is read from input.json['workflow']."
+        ),
     )
     run_p.add_argument(
         "-i",
@@ -553,8 +489,12 @@ def build_unified_parser(
     report_p.add_argument(
         "--method",
         type=parse_method,
-        required=True,
-        help="Workflow method: base / smear / convergence / magmom.",
+        default=None,
+        help=(
+            "Workflow method: base / smear / convergence / magmom. "
+            "If omitted, the value is read from output.json['workflow']. "
+            "Required if output.json lacks a 'workflow' field."
+        ),
     )
     report_p.add_argument(
         "-i",
@@ -600,10 +540,11 @@ def build_unified_parser(
     copy_p.add_argument(
         "--method",
         type=parse_method,
-        required=True,
+        default=None,
         help=(
             "Workflow method used to validate WorkChain classes and "
-            "to look up the inner JSON key."
+            "to look up the inner JSON key. If omitted, the value is "
+            "read from output.json['workflow']."
         ),
     )
     copy_p.add_argument(
@@ -655,10 +596,11 @@ def build_unified_parser(
     archive_p.add_argument(
         "--method",
         type=parse_method,
-        required=True,
+        default=None,
         help=(
             "Workflow method (used to validate the WorkChain class of "
-            "each node identifier)."
+            "each node identifier). If omitted, the value is read from "
+            "output.json['workflow']."
         ),
     )
     archive_p.add_argument(
@@ -792,12 +734,10 @@ __all__ = [
     "MAGMOM_CLASS_TO_BACKEND",
     "get_method_spec",
     "parse_method",
+    "resolve_method",
     # Run helpers
-    "build_run_arg_parser",
     "execute_workflow",
     # JSON helpers
-    "read_unique_pks",
-    "read_unique_node_identifiers",
     "collect_pk_map",
     "default_result_path",
     # Report helpers

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiida import orm
-from aiida.engine import append_, calcfunction, WorkChain
+from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
 
@@ -123,9 +123,14 @@ def parse_and_gather_smear_results(child_pks):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
+    from aiida_uranium_workflow.utils.parser_energy_time import fetch_vasp
+
     eentropy = {}
     num_atoms = {}
     eentropy_per_atom = {}
+    total_energy = {}
+    wall_time_seconds = {}
+    status = {}
 
     for pk in child_pks.get_list():
         child = load_node(pk)
@@ -134,8 +139,28 @@ def parse_and_gather_smear_results(child_pks):
         sigma = incar.get("sigma")
         label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
 
+        # Capture exit status for every submitted child, even those
+        # that did not finish OK — the report needs to surface
+        # failures explicitly. ``exit_status`` is ``None`` for
+        # unfinished processes; we render that as ``-1`` so the
+        # Markdown table shows a non-empty cell.
+        status[label] = (
+            int(child.exit_status)
+            if child.exit_status is not None
+            else -1
+        )
+
         if not child.is_finished_ok:
             continue
+
+        # Energy + wall-time from misc (shared parser).
+        try:
+            energy, wall_time = fetch_vasp(child)
+            total_energy[label] = energy
+            wall_time_seconds[label] = wall_time
+        except Exception as e:  # noqa: BLE001 — defensive: misc missing
+            total_energy[label] = f"Parsing failed: {str(e)}"
+            wall_time_seconds[label] = None
 
         try:
             retrieved = child.outputs.retrieved
@@ -173,5 +198,8 @@ def parse_and_gather_smear_results(child_pks):
             "eentropy": eentropy,
             "num_atoms": num_atoms,
             "eentropy_per_atom": eentropy_per_atom,
+            "total_energy": total_energy,
+            "wall_time_seconds": wall_time_seconds,
+            "status": status,
         }
     )

@@ -1,0 +1,6 @@
+aiida-core>=2.0
+aiida-abacus>=0.1
+aiida-vasp>=5.0
+ase>=3.22
+pyyaml>=6.0
+pyxtal>=1.0

@@ -1,0 +1,27 @@
+yeesuan:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_wallclock_seconds: 7200
+    queue_name: "q_ysuan"
+    withmpi: true
+xinghe:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 48
+      tot_num_mpiprocs: 48
+    max_wallclock_seconds: 7200
+    queue_name: "shine"
+    withmpi: true
+guangzhou:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 64
+      tot_num_mpiprocs: 64
+    max_wallclock_seconds: 7200
+    queue_name: "deimos"
+    withmpi: true

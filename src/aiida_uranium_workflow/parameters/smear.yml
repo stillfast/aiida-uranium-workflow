@@ -1,0 +1,25 @@
+test:
+  # TODO: you should devide it into abacus and vasp's smear workchain format.
+  smear_list:
+    - gauss
+    - mp
+    - mp2
+  sigma_list: # the unit is eV
+    - 0.8
+    - 0.5
+    - 0.3
+    - 0.2
+    - 0.1
+    - 0.08
+    - 0.06
+
+test_simple:
+  # TODO: you should devide it into abacus and vasp's smear workchain format.
+  smear_list:
+    - mp
+  sigma_list: # the unit is eV
+    - 0.3
+    - 0.2
+    - 0.1
+    - 0.08
+    - 0.06

@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiida-uranium-workflow"
+version = "0.1.0"
+description = "AiiDA workflows for uranium calculations (smear test for ABACUS/VASP)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "liguozhou" },
+]
+keywords = ["aiida", "plugin", "abacus", "vasp", "uranium", "smear"]
+classifiers = [
+  "Framework :: AiiDA",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Science/Research",
+  "Development Status :: 3 - Alpha",
+]
+dependencies = [
+  "aiida-core>=2.0",
+  "aiida-abacus>=0.1",
+  "aiida-vasp>=5.0",
+  "ase>=3.22",
+  "pyyaml>=6.0",
+  "pyxtal>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build",
+  "twine",
+  "pytest>=7.0",
+  "pre-commit>=3.0",
+  "isort>=5.13",
+  "black>=24.0",
+  "flake8>=7.0",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+aiida-uranium = "aiida_uranium_workflow.cli.main:main"
+
+[project.entry-points."aiida.workflows"]
+"abacus.smear" = "aiida_uranium_workflow.workflows.smear.abacus:AbacusSmearWorkChain"
+"vasp.smear" = "aiida_uranium_workflow.workflows.smear.vasp:VaspSmearWorkChain"
+"abacus.convergence" = "aiida_uranium_workflow.workflows.convergence.abacus:AbacusConvergenceWorkChain"
+"vasp.convergence" = "aiida_uranium_workflow.workflows.convergence.vasp:VaspConvergenceWorkChain"
+"abacus.magmom" = "aiida_uranium_workflow.workflows.magmom.abacus:AbacusMagmomWorkChain"
+"vasp.magmom" = "aiida_uranium_workflow.workflows.magmom.vasp:VaspMagmomWorkChain"
+
+[project.urls]
+Source = "https://github.com/liguozhou/aiida-uranium-workflow"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aiida_uranium_workflow = [
+  "*.yml",
+  "*.yaml",
+  "*.json",
+  "parameters/*.yml",
+  "parameters/*/*.yml",
+  "static/*.yml",
+  "example/*",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_alphabetical_sort = true
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503", "E402"]
+
+[tool.mypy]
+ignore_missing_imports = true
+follow_imports = "skip"
+strict = false

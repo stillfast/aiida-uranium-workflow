@@ -1,0 +1,81 @@
+test:
+  abacus:
+    ecutwfc_list: # the unit is Ry
+      - 40
+      - 60
+      - 80
+      - 100
+      - 120
+      - 150
+    kpoints_distance_list: # the unit is A^-1
+      - 0.1
+      - 0.15
+      - 0.2
+      - 0.25
+      - 0.3
+  vasp:
+    encut_list: # the unit is eV
+      - 252.502
+      - 300
+      - 350
+      - 400
+      - 450
+      - 500
+    kpoints_spacing_list: # the unit is A^-1 * 2pi
+      - 0.0159154943 # 0.1 A^-1 = 0.1/2/pi (A^-1 * 2pi)= 0.0159154943 (A^-1 * 2pi)
+      - 0.0238732415 # 0.15 A^-1 = 0.15/2/pi (A^-1 * 2pi)= 0.0238732415 (A^-1 * 2pi)
+      - 0.0318309886 # 0.2 A^-1 = 0.2/2/pi (A^-1 * 2pi)
+      - 0.0397887358 # 0.25 A^-1 = 0.25/2/pi (A^-1 * 2pi)
+      - 0.0477464829 # 0.3 A^-1 = 0.3/2/pi (A^-1 * 2pi)
+
+lcao:
+  abacus:
+    ecutwfc_list: # the unit is Ry
+      - 60
+      - 65
+      - 70
+      - 75
+    kpoints_mesh_list: # the unit is A^-1
+      - [9, 9, 9]
+      - [11, 11 ,11]
+      - [13, 13, 13]
+      - [15, 15, 15]
+
+vasp:
+  vasp:
+    encut_list: # the unit is eV
+      - 350
+      - 400
+      - 450
+    kpoints_mesh_list: # the unit is A^-1
+      - [9, 9, 9]
+      - [7, 7, 7]
+      - [5, 5, 5]
+
+pw:
+  abacus:
+    ecutwfc_list: # the unit is Ry
+      - 135
+      - 140
+      - 145
+      - 150
+      - 155
+    kpoints_mesh_list: # the unit is A^-1
+      - [9, 9, 9]
+      - [11, 11 ,11]
+      - [13, 13, 13]
+      - [15, 15, 15]
+
+orbital:
+  abacus:
+    ecutwfc_list: # the unit is Ry
+      - 150
+    kpoints_mesh_list: # the unit is A^-1
+      - [11, 11 ,11]
+
+orbital_Si:
+  abacus:
+    ecutwfc_list: # the unit is Ry
+      - 100
+    kpoints_mesh_list: # the unit is A^-1
+      - [11, 11 ,11]

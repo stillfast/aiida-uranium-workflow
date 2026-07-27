@@ -1,0 +1,144 @@
+bcc-uranium: # uranium structure of T = 1073K
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.532] # x means 1D array containing lattice parameters in A and coordinates
+
+bcc-uranium-0K: # uranium structure of T = 0K
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.45063]
+
+gamma-uranium: 
+  spacegroup: 129
+  elements: ["U", "U"]
+  wickoff_position: ["a","c"]
+  x: [4.995, 3.532, 0, 0.5]
+
+gamma0-uranium: 
+  spacegroup: 129
+  elements: ["U", "U"]
+  wickoff_position: ["a","c"]
+  x: [4.995, 3.532, 0, 0.45]
+
+U-X/FCC:
+  spacegroup: 225
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [4.4286]
+
+U-X/BCC:
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.4351]
+
+U-X/SC:
+  spacegroup: 221
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [2.6741]
+
+U-X/Diamond:
+  spacegroup: 227
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [5.8293]
+
+U-X2O:
+  spacegroup: 225
+  elements: ["U","O"]
+  wickoff_position: ["c","a"]
+  x: [5.8533]
+
+U-XO:
+  spacegroup: 225
+  elements: ["U","O"]
+  wickoff_position: ["a","b"]
+  x: [4.8408]
+
+U-X2O3:
+  spacegroup: 224
+  elements: ["U","O"]
+  wickoff_position: ["b","d"]
+  x: [5.3229]
+
+U-XO2:
+  spacegroup: 225
+  elements: ["U","O"]
+  wickoff_position: ["a","c"]
+  x: [5.3844]
+
+U-X2O5:
+  spacegroup: 224
+  elements: ["U","O", "O"]
+  wickoff_position: ["b","c", "d"]
+  x: [5.3431]
+
+U-XO3:
+  spacegroup: 221
+  elements: ["U","O"]
+  wickoff_position: ["a", "d"]
+  x: [4.1646]
+
+
+Si-X/FCC:
+  spacegroup: 225
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [3.8693]
+
+Si-X/BCC:
+  spacegroup: 229
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [3.0825]
+
+Si-X/SC:
+  spacegroup: 221
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [2.6741]
+
+Si-X/Diamond:
+  spacegroup: 227
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [5.4699]
+
+Si-X2O:
+  spacegroup: 225
+  elements: ["Si","O"]
+  wickoff_position: ["c","a"]
+  x: [5.5474]
+
+Si-XO:
+  spacegroup: 225
+  elements: ["Si","O"]
+  wickoff_position: ["a","b"]
+  x: [4.6162]
+
+Si-X2O3:
+  spacegroup: 224
+  elements: ["Si","O"]
+  wickoff_position: ["b","d"]
+  x: [4.605]
+
+Si-XO2:
+  spacegroup: 225
+  elements: ["Si","O"]
+  wickoff_position: ["a","c"]
+  x: [4.5823]
+
+Si-X2O5:
+  spacegroup: 224
+  elements: ["Si","O", "O"]
+  wickoff_position: ["b","c", "d"]
+  x: [4.9599]
+
+Si-XO3:
+  spacegroup: 221
+  elements: ["Si","O"]
+  wickoff_position: ["a", "d"]
+  x: [3.4699]

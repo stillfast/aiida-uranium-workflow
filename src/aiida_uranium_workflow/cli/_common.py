@@ -1,0 +1,813 @@
+"""Shared CLI helpers used by every ``cli.*`` module and the unified
+``cli.main`` entry point.
+
+Goals:
+
+* Centralise the argparse boilerplate shared by the ``*_run.py`` shims
+  (base, smear, convergence, magmom).
+* Centralise the WorkChain detection / report-writing pipeline shared
+  by the ``*_report.py`` shims (base, smear, convergence, magmom).
+* Provide a single ``read_unique_pks`` helper for CLI tools that walk a
+  ``final_cal.json``-style file (smear_report batch mode + smear_archive).
+* Expose a :data:`METHOD_SPECS` registry that drives the unified
+  ``aiida-uranium {run,report,archive}`` entry point — adding a new
+  method only requires extending this dict.
+
+The module deliberately stays import-friendly — it pulls in
+``aiida``/``aiida.orm`` lazily so that ``argparse``-only paths (e.g.
+``--help``) do not require a configured profile.
+"""
+
+from __future__ import annotations
+
+from aiida import load_profile
+from aiida.orm import load_node
+from aiida_uranium_workflow.schedulers import get_orchestrator
+from aiida_uranium_workflow.utils.config import ConfigLoader
+from aiida_uranium_workflow.utils.copy_calc import (
+    collect_identifiers_from_json,
+    collect_pks_from_json,
+)
+from aiida_uranium_workflow.utils.report.convergence import (
+    generate_report as generate_convergence_report,
+)
+from aiida_uranium_workflow.utils.report.magmom import (
+    generate_report as generate_magmom_report,
+)
+from aiida_uranium_workflow.utils.report.smear import (
+    generate_report as generate_smear_report,
+)
+
+import argparse
+import json
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+
+# ---------------------------------------------------------------------------
+# Method registry (drives the unified CLI)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MethodSpec:
+    """All the per-method bits the unified CLI needs to know about."""
+
+    #: Canonical method name (``"base"`` / ``"smear"`` /
+    #: ``"convergence"`` / ``"magmom"``).
+    name: str
+    #: ``class_name -> backend`` mapping used for filter / dispatch.
+    class_to_backend: Mapping[str, str]
+    #: ``generate_report(output_params, pk, backend) -> str`` importable.
+    generate_report: Callable[..., str]
+    #: ``backend -> key`` layout written to the output.json pk map.
+    backend_to_key: Mapping[str, str] = field(default_factory=dict)
+
+
+#: ``class_name -> backend`` for each supported workflow. The order
+#: (vasp-first) matches the messages the original shims emitted so log
+#: scrapers stay happy.
+SMEAR_CLASS_TO_BACKEND: dict[str, str] = {
+    "VaspSmearWorkChain": "vasp",
+    "AbacusSmearWorkChain": "abacus",
+}
+CONVERGENCE_CLASS_TO_BACKEND: dict[str, str] = {
+    "VaspConvergenceWorkChain": "vasp",
+    "AbacusConvergenceWorkChain": "abacus",
+}
+MAGMOM_CLASS_TO_BACKEND: dict[str, str] = {
+    "VaspMagmomWorkChain": "vasp",
+    "AbacusMagmomWorkChain": "abacus",
+}
+BASE_CLASS_TO_BACKEND: dict[str, str] = {
+    "VaspWorkChain": "vasp",
+    "AbacusBaseWorkChain": "abacus",
+}
+
+
+def _unsupported_base_report(*_args, **_kwargs) -> str:
+    raise NotImplementedError("Reports are not supported for direct base workflows")
+
+
+METHOD_SPECS: dict[str, MethodSpec] = {
+    "base": MethodSpec(
+        name="base",
+        class_to_backend=BASE_CLASS_TO_BACKEND,
+        generate_report=_unsupported_base_report,
+        backend_to_key={"abacus": "abacus", "vasp": "vasp"},
+    ),
+    "smear": MethodSpec(
+        name="smear",
+        class_to_backend=SMEAR_CLASS_TO_BACKEND,
+        generate_report=generate_smear_report,
+        backend_to_key={"abacus": "smear", "vasp": "smear"},
+    ),
+    "convergence": MethodSpec(
+        name="convergence",
+        class_to_backend=CONVERGENCE_CLASS_TO_BACKEND,
+        generate_report=generate_convergence_report,
+        backend_to_key={"abacus": "convergence", "vasp": "convergence"},
+    ),
+    "magmom": MethodSpec(
+        name="magmom",
+        class_to_backend=MAGMOM_CLASS_TO_BACKEND,
+        generate_report=generate_magmom_report,
+        backend_to_key={"abacus": "magmom", "vasp": "magmom"},
+    ),
+}
+
+
+SUPPORTED_METHODS: tuple[str, ...] = tuple(METHOD_SPECS.keys())
+
+
+def get_method_spec(method: str) -> MethodSpec:
+    """Return the :class:`MethodSpec` for ``method`` (raises ``ValueError``)."""
+    try:
+        return METHOD_SPECS[method]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown method '{method}'. Supported: {list(METHOD_SPECS)}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Run-script helpers (smear_run / convergence_run / magmom_run)
+# ---------------------------------------------------------------------------
+
+
+def build_run_arg_parser(
+    prog: str,
+    description: str,
+    *,
+    with_save_cal: bool = False,
+) -> argparse.ArgumentParser:
+    """Build the standard ``-i / -p / --only`` argument parser for ``*_run.py``.
+
+    Args:
+        prog: Program name (shown by ``--help``).
+        description: One-line summary shown by ``--help``.
+        with_save_cal: When ``True`` add ``--save-cal`` / ``--no-save-cal``
+            used by ``smear_run`` to control the optional
+            ``final_cal.json`` write. Convergence and magmom runs do not
+            need that flag because they don't persist the pk map.
+    """
+    p = argparse.ArgumentParser(prog=prog, description=description)
+    p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the input JSON file (see example/input.json).",
+    )
+    p.add_argument(
+        "-p",
+        "--profile",
+        dest="profile",
+        default=None,
+        help="AiiDA profile name (overrides input.json['profile']).",
+    )
+    p.add_argument(
+        "--only",
+        choices=("abacus", "vasp"),
+        default=None,
+        help="Restrict to one backend (default: both requested in JSON).",
+    )
+    if with_save_cal:
+        p.add_argument(
+            "--save-cal",
+            dest="save_cal",
+            default=None,
+            metavar="PATH",
+            help=(
+                "Write a final_cal.json-style mapping of submitted pks. "
+                "Default: <input_dir>/output.json. The file is created "
+                "(or overwritten) only after at least one WorkChain has "
+                "been submitted successfully."
+            ),
+        )
+        p.add_argument(
+            "--no-save-cal",
+            dest="save_cal",
+            action="store_const",
+            const=False,
+            help="Skip writing the output.json pk map.",
+        )
+    return p
+
+
+def execute_workflow(
+    *,
+    input_json: str,
+    profile: str | None,
+    only: str | None,
+) -> list:
+    """Run the orchestrator that matches ``input_json``'s workflow.
+
+    Returns the list of :class:`SubmittedJob` produced by
+    :meth:`WorkflowOrchestrator.run_with_jobs`. Each record carries
+    both the integer pk and the WorkChain UUID string (the canonical
+    identifier written into ``output.json``).
+
+    Raises ``FileNotFoundError`` / ``ValueError`` (from
+    :class:`ConfigLoader`) on bad input — the CLI is expected to let
+    those propagate.
+    """
+    bundle = ConfigLoader(input_json).load_all()
+    if profile:
+        bundle.input_params["profile"] = profile
+
+    backends = (only,) if only else None
+    orchestrator = get_orchestrator(bundle, backends=backends)
+    return orchestrator.run_with_jobs()
+
+
+# ---------------------------------------------------------------------------
+# JSON-pk helpers (smear_report batch mode + smear_archive + unified report)
+# ---------------------------------------------------------------------------
+
+
+def read_unique_pks(
+    input_path: Path,
+    *,
+    source: str,
+) -> list[int]:
+    """Read a nested JSON pk tree and return ``sorted(set(pks))``.
+
+    ``source`` is used purely to label error messages (``smear_archive``,
+    ``smear_report``, …). Returns an empty list when the file is
+    missing, fails to parse, or contains no integer leaves — callers
+    decide how to react.
+
+    .. note::
+       Newer ``output.json`` files store WorkChain UUIDs in the leaves
+       (see :func:`aiida_uranium_workflow.utils.cal_json.build_cal_json`).
+       This helper still accepts the legacy pk-only form; the modern,
+       UUID-aware entry point is :func:`read_unique_node_identifiers`.
+    """
+    if not input_path.is_file():
+        print(f"[{source}] Input JSON not found: {input_path}", file=sys.stderr)
+        return []
+    try:
+        data = json.loads(input_path.read_text())
+    except json.JSONDecodeError as e:
+        print(
+            f"[{source}] Failed to parse JSON {input_path}: {e}",
+            file=sys.stderr,
+        )
+        return []
+    pks = sorted(set(collect_pks_from_json(data)))
+    if not pks:
+        print(
+            f"[{source}] No integer pks found in {input_path}.",
+            file=sys.stderr,
+        )
+    return pks
+
+
+def read_unique_node_identifiers(
+    input_path: Path,
+    *,
+    source: str,
+) -> list[str]:
+    """Read an ``output.json`` and return ``sorted(set(node identifiers))``.
+
+    Each identifier is either an integer pk (legacy ``output.json``
+    files) or a WorkChain UUID string (modern files). AiiDA's
+    ``load_node(...)`` accepts both, so the returned list can be
+    consumed directly by the report / archive pipelines.
+
+    ``source`` is used for log labels (e.g. ``smear-report``). Returns
+    an empty list when the file is missing / malformed / empty.
+    """
+    if not input_path.is_file():
+        print(f"[{source}] Input JSON not found: {input_path}", file=sys.stderr)
+        return []
+    try:
+        data = json.loads(input_path.read_text())
+    except json.JSONDecodeError as e:
+        print(
+            f"[{source}] Failed to parse JSON {input_path}: {e}",
+            file=sys.stderr,
+        )
+        return []
+    ids = sorted(set(collect_identifiers_from_json(data)))
+    if not ids:
+        print(
+            f"[{source}] No node identifiers (pk or uuid) found in {input_path}.",
+            file=sys.stderr,
+        )
+    return ids
+
+
+# ---------------------------------------------------------------------------
+# Report-script helpers (smear_report / convergence_report / magmom_report)
+# ---------------------------------------------------------------------------
+
+
+def load_finished_workchain(node_identifier: int | str, profile: str | None):
+    """``load_profile`` + ``load_node(id)`` + ``is_finished`` check.
+
+    ``node_identifier`` can be an integer pk (legacy) or a UUID string
+    (modern ``output.json`` layout) — :func:`aiida.orm.load_node`
+    transparently accepts both.
+
+    Returns a ``(workchain, status)`` tuple where ``status`` is one of:
+
+    * ``"ok"`` — workchain loaded successfully and ``is_finished``.
+    * ``"load_failed"`` — :func:`load_node` raised.
+    * ``"not_finished"`` — workchain is loaded but not finished.
+
+    No output is written; the caller decides how to surface the
+    failure (convergence/magmom use ``print(..., file=sys.stderr)``,
+    smear returns a status string instead).
+    """
+    load_profile(profile)
+    try:
+        workchain = load_node(node_identifier)
+    except Exception as e:
+        return (None, e), "load_failed"
+
+    if not workchain.is_finished:
+        return (workchain, workchain.process_state.value), "not_finished"
+
+    return workchain, "ok"
+
+
+def resolve_backend(
+    class_name: str,
+    class_to_backend: Mapping[str, str],
+) -> str | None:
+    """Map a WorkChain class name to its backend (``"abacus"`` / ``"vasp"``).
+
+    Returns ``None`` when the class name isn't supported. The caller is
+    responsible for the user-facing error message (different report
+    shims want different wording).
+    """
+    return class_to_backend.get(class_name)
+
+
+def _short_id(node_identifier: int | str) -> str:
+    """Return a filesystem-friendly, mostly-unique short id for ``id``.
+
+    For integer pks this is just ``str(pk)``. For UUID strings we keep
+    the leading 8 hex characters (the equivalent of ``git short
+    hash``); collision risk across a single ``output.json`` is
+    negligible, and the result stays short and unambiguous in logs.
+    """
+    if isinstance(node_identifier, int):
+        return str(node_identifier)
+    text = str(node_identifier)
+    if len(text) >= 8 and text.replace("-", "")[:8]:
+        return text[:8]
+    return text
+
+
+def write_text_report(
+    report_text: str,
+    output_path: str | Path,
+) -> bool:
+    """Write ``report_text`` to ``output_path``.
+
+    Returns ``True`` on success, ``False`` on IO failure.
+    """
+    output_path = Path(output_path)
+    try:
+        output_path.write_text(report_text)
+    except Exception:
+        return False
+    return True
+
+
+def generate_one_report(
+    *,
+    node_identifier: int | str,
+    output_path: Path,
+    profile: str | None,
+    class_to_backend: Mapping[str, str],
+    generate_report: Callable,
+) -> str:
+    """End-to-end "one node → one Markdown report" pipeline (smear_report).
+
+    ``node_identifier`` is either an integer pk (legacy output.json) or
+    a WorkChain UUID string (modern output.json); ``load_node(...)``
+    accepts both. The short 8-hex prefix of the UUID is used in log
+    strings to keep them readable, while the full identifier is
+    forwarded to AiiDA.
+
+    Steps:
+
+    1. :func:`load_finished_workchain` — verify the node loads and the
+       workflow is finished.
+    2. Map ``process_class.__name__`` to ``"abacus"`` / ``"vasp"`` via
+       :func:`resolve_backend`.
+    3. Pull ``output_parameters`` (failure surfaced as
+       ``"failed: ... output_parameters ..."``).
+    4. Call ``generate_report(output_parameters, node_identifier, workflow_type)``.
+    5. Write the report (failure surfaced as
+       ``"failed: write ... -> ..."``).
+
+    Returns one of:
+
+    * ``"ok -> <path>"``
+    * ``"failed: load_node(<id>) -> <e>"``
+    * ``"failed: id=<id> output_parameters -> <e>"``
+    * ``"skipped: id=<id> unsupported WorkChain type '<ClassName>'"``
+    * ``"skipped: id=<id> not finished (state=<...>)"``
+    * ``"failed: write <path> -> <e>"``
+
+    The status strings mention ``id=`` (instead of ``pk=``) so a UUID
+    isn't misread as a pk. Log scrapers matching on the leading
+    ``"failed: load_node("`` / ``"failed: "`` text remain functional.
+    """
+    short = _short_id(node_identifier)
+    result, status = load_finished_workchain(node_identifier, profile)
+    if status == "load_failed":
+        _, exc = result
+        return f"failed: load_node({node_identifier}) -> {exc}"
+
+    workchain = result
+    class_name = workchain.process_class.__name__
+    backend = resolve_backend(class_name, class_to_backend)
+    if backend is None:
+        return (
+            f"skipped: id={short} unsupported WorkChain type {class_name!r}"
+        )
+
+    if status == "not_finished":
+        _, state_value = result
+        return (
+            f"skipped: id={short} not finished "
+            f"(state={state_value})"
+        )
+
+    try:
+        output_parameters = workchain.outputs.output_parameters.get_dict()
+    except Exception as e:
+        return f"failed: id={short} output_parameters -> {e}"
+
+    # For magmom workflows, ``AbacusMagmomWorkChain`` /
+    # ``VaspMagmomWorkChain`` do not stash the original ``magmom_list`` in
+    # ``output_parameters``. The list lives only on the WorkChain's
+    # ``inputs.magmom_list`` port, so inject it here so the report can
+    # render the ``initial magmom`` column. The injection is done on a
+    # local copy — AiiDA's stored ``output_parameters`` Dict is untouched.
+    if class_name in MAGMOM_CLASS_TO_BACKEND and "magmom_list" not in output_parameters:
+        try:
+            magmom_list_node = workchain.inputs.magmom_list
+            output_parameters = dict(output_parameters)
+            output_parameters["magmom_list"] = list(magmom_list_node.get_list())
+        except (AttributeError, KeyError):
+            pass
+
+    report_text = generate_report(output_parameters, node_identifier, backend)
+    if write_text_report(report_text, output_path):
+        return f"ok -> {output_path}"
+    return f"failed: write {output_path}"
+
+
+# ---------------------------------------------------------------------------
+# Unified subcommand helpers
+# ---------------------------------------------------------------------------
+
+
+def parse_method(value: str) -> str:
+    """Validate ``--method`` against :data:`SUPPORTED_METHODS`."""
+    if value not in METHOD_SPECS:
+        raise argparse.ArgumentTypeError(
+            f"unknown method '{value}', choose one of {list(METHOD_SPECS)}"
+        )
+    return value
+
+
+def build_unified_parser(
+    *,
+    prog: str = "aiida-uranium",
+    description: str = "Unified CLI for aiida-uranium-workflow (run / report / archive / copy).",
+) -> argparse.ArgumentParser:
+    """Top-level parser for ``aiida-uranium {run,report,archive,copy}``."""
+    p = argparse.ArgumentParser(prog=prog, description=description)
+    sub = p.add_subparsers(dest="command", required=True)
+
+    # run -----------------------------------------------------------------
+    run_p = sub.add_parser(
+        "run",
+        prog=f"{prog} run",
+        help="Run a workflow (base / smear / convergence / magmom).",
+        description=(
+            "Submit one base / smear / convergence / magmom WorkChain per "
+            "(backend, preset, structure) combination defined in the unified "
+            "input JSON."
+        ),
+    )
+    run_p.add_argument(
+        "--method",
+        type=parse_method,
+        required=True,
+        help="Workflow method: base / smear / convergence / magmom.",
+    )
+    run_p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the unified input JSON file.",
+    )
+    run_p.add_argument(
+        "-p",
+        "--profile",
+        default=None,
+        help="AiiDA profile name (overrides input.json['profile']).",
+    )
+    run_p.add_argument(
+        "--only",
+        choices=("abacus", "vasp"),
+        default=None,
+        help="Restrict to a single backend.",
+    )
+    run_p.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Where to write the output.json pk map. "
+            "Default: <input_dir>/output.json."
+        ),
+    )
+
+    # report --------------------------------------------------------------
+    report_p = sub.add_parser(
+        "report",
+        prog=f"{prog} report",
+        help="Generate Markdown reports from an output.json.",
+        description=(
+            "For each WorkChain node identifier (UUID string in modern "
+            "output.json files; integer pk in legacy files) found in "
+            "the output.json file, generate a Markdown report via the "
+            "matching method's report generator."
+        ),
+    )
+    report_p.add_argument(
+        "--method",
+        type=parse_method,
+        required=True,
+        help="Workflow method: base / smear / convergence / magmom.",
+    )
+    report_p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the output.json produced by `aiida-uranium run`.",
+    )
+    report_p.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        default=None,
+        help=(
+            "Directory to write reports into. "
+            "Default: <input_dir>/reports."
+        ),
+    )
+    report_p.add_argument(
+        "-p",
+        "--profile",
+        default=None,
+        help="AiiDA profile name.",
+    )
+
+    # copy ----------------------------------------------------------------
+    copy_p = sub.add_parser(
+        "copy",
+        prog=f"{prog} copy",
+        help=(
+            "Copy remote_folder contents of each CalcJob child of the "
+            "WorkChains listed in output.json to a local PATH, using "
+            "AiiDA's transport API."
+        ),
+        description=(
+            "Read an output.json produced by `aiida-uranium run`, walk "
+            "the provenance of every WorkChain it references, and copy "
+            "the contents of every CalcJobNode's outputs.remote_folder "
+            "into PATH/<backend>/<key>/<preset>/<calcjob_label> on the "
+            "current host. Use --dry-run to only list the source / "
+            "destination paths."
+        ),
+    )
+    copy_p.add_argument(
+        "--method",
+        type=parse_method,
+        required=True,
+        help=(
+            "Workflow method used to validate WorkChain classes and "
+            "to look up the inner JSON key."
+        ),
+    )
+    copy_p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the output.json produced by `aiida-uranium run`.",
+    )
+    copy_p.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        required=True,
+        metavar="PATH",
+        help=(
+            "Local destination directory. The full layout is "
+            "PATH/<backend>/<key>/<preset>/<calcjob_label>/."
+        ),
+    )
+    copy_p.add_argument(
+        "-p",
+        "--profile",
+        default=None,
+        help="AiiDA profile name.",
+    )
+    copy_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Only list source remote paths and the planned local "
+            "destinations; do not transfer any bytes."
+        ),
+    )
+
+    # archive -------------------------------------------------------------
+    archive_p = sub.add_parser(
+        "archive",
+        prog=f"{prog} archive",
+        help="Export node identifiers from an output.json into a .aiida archive.",
+        description=(
+            "Collect every node identifier (UUID string in modern "
+            "output.json files; integer pk in legacy files) in the "
+            "output.json file, validate each one against the selected "
+            "method's WorkChain class set, and export them into a "
+            "single AiiDA archive."
+        ),
+    )
+    archive_p.add_argument(
+        "--method",
+        type=parse_method,
+        required=True,
+        help=(
+            "Workflow method (used to validate the WorkChain class of "
+            "each node identifier)."
+        ),
+    )
+    archive_p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the output.json produced by `aiida-uranium run`.",
+    )
+    archive_p.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        default="archive.aiida",
+        help="Output archive file (default: archive.aiida).",
+    )
+    archive_p.add_argument(
+        "-p",
+        "--profile",
+        default=None,
+        help="AiiDA profile name.",
+    )
+    archive_p.add_argument(
+        "--no-comments",
+        dest="include_comments",
+        action="store_false",
+        help="Exclude comments from the archive.",
+    )
+    archive_p.add_argument(
+        "--no-logs",
+        dest="include_logs",
+        action="store_false",
+        help="Exclude logs from the archive.",
+    )
+    archive_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only list the node identifiers that would be archived.",
+    )
+
+    return p
+
+
+def collect_pk_map(
+    input_json: str | Path,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Read an output.json into the nested ``{backend: {key: {preset: id}}}`` shape.
+
+    ``id`` is typically a WorkChain UUID string (modern ``output.json``
+    files) but can also be an integer pk (legacy files). The shape is
+    preserved verbatim — callers use
+    :func:`collect_identifiers_from_json` (or ``load_node(id)``
+    directly) to consume the leaves.
+
+    Raises :class:`ValueError` if the file is missing or malformed.
+    """
+    p = Path(input_json)
+    if not p.is_file():
+        raise ValueError(f"Input JSON not found: {p}")
+    try:
+        data = json.loads(p.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON {p}: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"{p}: expected a JSON object, got {type(data).__name__}")
+    return data
+
+
+def default_result_path(input_json: str | Path) -> Path:
+    """``<input_dir>/output.json`` — used when ``--output`` is omitted."""
+    return Path(input_json).resolve().parent / "output.json"
+
+
+def list_archive_pks(
+    pk_map: Mapping[str, Any],
+    *,
+    method: str,
+    class_to_backend: Mapping[str, str],
+) -> tuple[list[str], list[tuple[Any, str]]]:
+    """Load each node identifier in ``pk_map`` and split into valid / mismatched lists.
+
+    Each leaf of ``pk_map`` is treated as a *node identifier* — an
+    integer pk (legacy) or a UUID string (modern). :func:`load_node`
+    transparently handles both. ``mismatched`` collects ``(id,
+    class_name)`` tuples for nodes whose ``process_class`` doesn't
+    match ``method``.
+    """
+    valid: list[str] = []
+    mismatched: list[tuple[Any, str]] = []
+    for backend, by_key in pk_map.items():
+        if not isinstance(by_key, dict):
+            continue
+        for _key, presets in by_key.items():
+            if not isinstance(presets, dict):
+                continue
+            for _preset, node_id in presets.items():
+                # Accept anything ``load_node`` can consume: integer pk
+                # or UUID string. Skip other scalars defensively.
+                if not isinstance(node_id, (int, str)) or isinstance(node_id, bool):
+                    continue
+                try:
+                    node = load_node(node_id)
+                except Exception as exc:
+                    short = _short_id(node_id)
+                    print(
+                        f"[archive] failed to load id={short}: {exc}",
+                        file=sys.stderr,
+                    )
+                    continue
+                class_name = node.process_class.__name__
+                if class_name not in class_to_backend:
+                    mismatched.append((node_id, class_name))
+                    continue
+                if class_to_backend[class_name] != backend:
+                    mismatched.append((node_id, class_name))
+                    continue
+                valid.append(node_id)
+    # Preserve a stable, sorted order (mixed int/str would raise in
+    # Python 3 — sort by string form to keep order stable across runs).
+    valid_sorted = sorted(set(valid), key=str)
+    return valid_sorted, mismatched
+
+
+__all__ = [
+    # Method registry
+    "MethodSpec",
+    "METHOD_SPECS",
+    "SUPPORTED_METHODS",
+    "SMEAR_CLASS_TO_BACKEND",
+    "CONVERGENCE_CLASS_TO_BACKEND",
+    "MAGMOM_CLASS_TO_BACKEND",
+    "get_method_spec",
+    "parse_method",
+    # Run helpers
+    "build_run_arg_parser",
+    "execute_workflow",
+    # JSON helpers
+    "read_unique_pks",
+    "read_unique_node_identifiers",
+    "collect_pk_map",
+    "default_result_path",
+    # Report helpers
+    "load_finished_workchain",
+    "resolve_backend",
+    "write_text_report",
+    "generate_one_report",
+    # Archive helpers
+    "list_archive_pks",
+    # Parser
+    "build_unified_parser",
+]
+

@@ -1,0 +1,226 @@
+SZ:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+DZP:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_dzp
+
+TZDP:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_tzdp
+
+PW:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+
+SZ_Si:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+PW_Si:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+# this is for huangyike
+SZ_Si_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_sz
+
+DZP_Si_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_dzp
+
+TZDP_Si_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_tzdp
+
+PW_Si_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_sz
+
+# this is for huangyike si 10 au
+SZ_Si_10au_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_10au_sz
+
+DZP_Si_10au_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_10au_dzp
+
+TZDP_Si_10au_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_10au_tzdp
+
+PW_Si_10au_hyk:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_si_10au_sz

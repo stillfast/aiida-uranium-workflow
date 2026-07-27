@@ -1,0 +1,7 @@
+test:
+  abacus:
+    mag_list: 
+      - [[4.0],[4.0]]
+  vasp:
+    magmom_mapping_list:
+      - {"U": 4.0}

@@ -1,0 +1,22 @@
+test:
+  parameters:
+    incar:
+      system: bcc-uranium
+      ispin: 2
+      prec: Accurate
+      lmaxmix: 6
+      lasph: true
+      lreal: false
+      lcharg: false
+      lwave: false
+
+      encut: 300
+      ismear: 1
+      sigma: 0.1
+      ediff: 1e-6
+      nelm: 100
+      nsw: 0
+  potential_family: "PBE"
+  potential_mapping:
+    U: "U"
+  kpoints_mesh: [9,9,9]

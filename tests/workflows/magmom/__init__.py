@@ -1,0 +1,1 @@
+"""Tests for the magmom workflows (AbacusMagmomWorkChain, VaspMagmomWorkChain)."""

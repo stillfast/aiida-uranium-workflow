@@ -1,0 +1,118 @@
+test:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+
+test_soc:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz_soc
+
+test_relax:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: cell-relax
+        force_thr_ev: 0.01
+        stress_thr: 0.5
+        relax_nmax: 100
+        out_stru: 1
+        relax_method: cg
+        relax_scale_force: 0.5
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+
+test_convergence:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz
+
+test_convergence_soc:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz_soc
+
+test_convergence_pw_soc:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz_soc
+
+test_convergence_pw:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz
+

@@ -1,0 +1,16 @@
+{
+    "workflow": "base",
+    "parameters": {
+        "abacus": {"abacus":"test"},
+        "vasp": {"vasp":"test"}
+    },
+    "static": {
+        "structure": "bcc-uranium",
+        "metadata": "yeesuan"
+    },
+    "profile":"aiida_profile",
+    "code":{
+        "abacus": "abacus@yeesuan",
+        "vasp": "vaspstd@yeesuan"
+    }
+}

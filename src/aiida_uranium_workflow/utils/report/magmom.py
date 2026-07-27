@@ -4,6 +4,12 @@ Extracts magnetism data from ``VaspMagmomWorkChain`` or
 ``AbacusMagmomWorkChain`` ``output_parameters`` and renders a
 Markdown report.
 
+The per-child single-column tables (``status`` / ``energy`` /
+``wall_time``) and the report header / footer are shared with the
+smear / convergence reports via :mod:`utils.report._common`. The
+``generate_*`` entry points keep their original signatures so existing
+callers and tests are unaffected.
+
 Per-backend key layout produced by the magmom workflows:
 
 * ABACUS (``AbacusMagmomWorkChain``)
@@ -17,8 +23,19 @@ Per-backend key layout produced by the magmom workflows:
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from ._common import (
+    format_scalar,
+    render_per_child_table,
+    render_report_footer,
+    render_report_header,
+)
+
+
+# ---------------------------------------------------------------------------
+# Value formatters (workflow-specific scalar coercion)
+# ---------------------------------------------------------------------------
 
 
 def _format_value(value: Any) -> str:
@@ -31,6 +48,107 @@ def _format_value(value: Any) -> str:
         formatted = ", ".join(_format_value(v) for v in value)
         return f"[{formatted}]"
     return str(value)
+
+
+def _coerce_scalar(value: Any) -> Optional[Union[float, List[float]]]:
+    """Reduce a number/list/dict to a float or list of floats.
+
+    ABACUS uses ``{"total_magnetism": ..., "absolute_magnetism": ...}``.
+    VASP exposes ``magnetization`` either as a scalar, a single-element
+    list ``[x]`` (total per axis), a multi-element list ``[x, y, z]``
+    (vector components, e.g. for SOC runs), or a dict with a
+    ``full_cell`` key.
+
+    Returns:
+        * ``float`` for scalars / single-element lists.
+        * ``list[float]`` for multi-element lists (preserves every
+          component).
+        * ``None`` for anything that cannot be unambiguously converted.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("total_magnetism", "absolute_magnetism", "full_cell", "total"):
+            if key in value:
+                return _coerce_scalar(value[key])
+        return None
+    if isinstance(value, (list, tuple)):
+        numeric: List[float] = []
+        for x in value:
+            coerced = _coerce_scalar(x)
+            if isinstance(coerced, list):
+                numeric.extend(coerced)
+            elif coerced is not None:
+                numeric.append(coerced)
+        if not numeric:
+            return None
+        if len(numeric) == 1:
+            return numeric[0]
+        return numeric
+    return None
+
+
+def _resolve_final_magnetism(
+    final_value: Any, site_value: Any
+) -> Tuple[Optional[float], Optional[float]]:
+    """Return ``(total, absolute)`` magnetization for a single child."""
+    if isinstance(final_value, dict):
+        total = _coerce_scalar(final_value.get("total_magnetism"))
+        absolute = _coerce_scalar(final_value.get("absolute_magnetism"))
+        if total is None:
+            total = _coerce_scalar(final_value)
+        if absolute is None:
+            if isinstance(total, list):
+                absolute = [abs(v) for v in total] if total else None
+            else:
+                absolute = abs(total) if total is not None else None
+        return total, absolute
+
+    total = _coerce_scalar(final_value)
+    if total is None:
+        return None, None
+    if isinstance(total, list):
+        return total, [abs(v) for v in total]
+    return total, abs(total)
+
+
+def _initial_mag_from_list_entry(entry: Any) -> str:
+    """Render an entry from ``magmom_list`` as a human-readable initial
+    magnetization string.
+
+    For ABACUS each entry is a nested list of per-atom magnetization
+    vectors (e.g. ``[[1.0], [1.0]]``); for VASP it is a mapping dict
+    (e.g. ``{"U": 1.0}``).
+    """
+    if isinstance(entry, dict):
+        parts = []
+        for element, value in entry.items():
+            if isinstance(value, (list, tuple)):
+                v = ", ".join(f"{float(x):g}" for x in value)
+            else:
+                v = f"{float(value):g}"
+            parts.append(f"{element}={v}")
+        return "; ".join(parts)
+    if isinstance(entry, (list, tuple)):
+        per_atom = []
+        for atom in entry:
+            if isinstance(atom, (list, tuple)):
+                per_atom.append(
+                    "[" + ", ".join(f"{float(x):g}" for x in atom) + "]"
+                )
+            else:
+                per_atom.append(f"{float(atom):g}")
+        return "[" + ", ".join(per_atom) + "]"
+    return str(entry)
+
+
+# ---------------------------------------------------------------------------
+# Backend-specific magnetism section
+# ---------------------------------------------------------------------------
 
 
 def _render_abacus_section(output_params: Dict[str, Any]) -> List[str]:
@@ -92,6 +210,47 @@ def _render_vasp_section(output_params: Dict[str, Any]) -> List[str]:
     return lines
 
 
+# ---------------------------------------------------------------------------
+# Per-child single-column tables
+# ---------------------------------------------------------------------------
+
+
+def generate_status_table(status: Dict[str, int]) -> str:
+    """Render the per-child exit-code status as a Markdown table."""
+    if not status:
+        return "No status data available."
+
+    lines = ["| child pk | exit_status |", "| --- | --- |"]
+    for label, exit_code in status.items():
+        lines.append(f"| {label} | {exit_code} |")
+    return "\n".join(lines)
+
+
+def generate_energy_table(final_energy: Dict[Any, Any]) -> str:
+    """Render a Markdown table of per-child final energy."""
+    return render_per_child_table(
+        final_energy,
+        column_header="final_energy",
+        column_name="final_energy",
+        cell_format=lambda v: format_scalar(v, fmt="%.6f"),
+    )
+
+
+def generate_wall_time_table(wall_time_seconds: Dict[Any, Any]) -> str:
+    """Render a Markdown table of per-child wall-clock time (seconds)."""
+    return render_per_child_table(
+        wall_time_seconds,
+        column_header="wall_time [s]",
+        column_name="wall_time",
+        cell_format=lambda v: format_scalar(v, fmt="%.3f"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Summary table
+# ---------------------------------------------------------------------------
+
+
 def generate_summary_table(output_params: Dict[str, Any]) -> str:
     """Generate a summary table with basic info."""
     lines = ["| Property | Value |", "| --- | --- |"]
@@ -121,130 +280,9 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def generate_status_table(status: Dict[str, int]) -> str:
-    """Render the per-child exit-code status as a Markdown table."""
-    if not status:
-        return "No status data available."
-
-    lines = ["| child label | exit_status |", "| --- | --- |"]
-    for label, exit_code in status.items():
-        lines.append(f"| {label} | {exit_code} |")
-    return "\n".join(lines)
-
-
-def _initial_mag_from_list_entry(entry: Any) -> str:
-    """Render an entry from ``magmom_list`` as a human-readable initial
-    magnetization string.
-
-    For ABACUS each entry is a nested list of per-atom magnetization vectors
-    (e.g. ``[[1.0], [1.0]]``); for VASP it is a mapping dict
-    (e.g. ``{"U": 1.0}``).
-    """
-    if isinstance(entry, dict):
-        parts = []
-        for element, value in entry.items():
-            if isinstance(value, (list, tuple)):
-                v = ", ".join(f"{float(x):g}" for x in value)
-            else:
-                v = f"{float(value):g}"
-            parts.append(f"{element}={v}")
-        return "; ".join(parts)
-    if isinstance(entry, (list, tuple)):
-        per_atom = []
-        for atom in entry:
-            if isinstance(atom, (list, tuple)):
-                per_atom.append(
-                    "[" + ", ".join(f"{float(x):g}" for x in atom) + "]"
-                )
-            else:
-                per_atom.append(f"{float(atom):g}")
-        return "[" + ", ".join(per_atom) + "]"
-    return str(entry)
-
-
-def _coerce_scalar(value: Any) -> Optional[Union[float, List[float]]]:
-    """Reduce a number/list/dict to a float or list of floats.
-
-    ABACUS uses ``{"total_magnetism": ..., "absolute_magnetism": ...}``.
-    VASP exposes ``magnetization`` either as a scalar, a single-element list
-    ``[x]`` (total per axis), a multi-element list ``[x, y, z]`` (vector
-    components, e.g. for SOC runs), or a dict with a ``full_cell`` key.
-
-    Returns:
-        * ``float`` for scalars / single-element lists.
-        * ``list[float]`` for multi-element lists (preserves every component).
-        * ``None`` for anything that cannot be unambiguously converted.
-
-    Multi-element lists are returned as a list (not collapsed to a single
-    number) so callers can render per-component totals — e.g. the z-component
-    of a SOC magnetization vector — without losing information.
-    """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, dict):
-        for key in ("total_magnetism", "absolute_magnetism", "full_cell", "total"):
-            if key in value:
-                return _coerce_scalar(value[key])
-        return None
-    if isinstance(value, (list, tuple)):
-        numeric: List[float] = []
-        for x in value:
-            coerced = _coerce_scalar(x)
-            if isinstance(coerced, list):
-                numeric.extend(coerced)
-            elif coerced is not None:
-                numeric.append(coerced)
-        if not numeric:
-            return None
-        if len(numeric) == 1:
-            return numeric[0]
-        return numeric
-    return None
-
-
-def _resolve_final_magnetism(
-    final_value: Any, site_value: Any
-) -> Tuple[Optional[float], Optional[float]]:
-    """Return ``(total, absolute)`` magnetization for a single child.
-
-    Both columns follow ABACUS's own definitions when the underlying
-    data is a dict::
-
-        total     = final_value["total_magnetism"]
-        absolute  = final_value["absolute_magnetism"]
-
-    so the report matches the numbers printed in ``OUT.aiida``'s
-    ``running_scf.log``. ``absolute`` is *not* recomputed from per-site
-    magnetization: ABACUS's ``absolute_magnetism`` is the absolute value
-    of the *cell-wide* total (i.e. ``|sum_i m_i|``), whereas
-    ``sum_i |m_i|`` is a different quantity that previously caused
-    confusion in the report.
-
-    For backends that don't expose the dict (plain scalars / lists, e.g.
-    VASP), ``absolute`` falls back to ``abs(total)``.
-    """
-    if isinstance(final_value, dict):
-        total = _coerce_scalar(final_value.get("total_magnetism"))
-        absolute = _coerce_scalar(final_value.get("absolute_magnetism"))
-        if total is None:
-            total = _coerce_scalar(final_value)
-        if absolute is None:
-            if isinstance(total, list):
-                absolute = [abs(v) for v in total] if total else None
-            else:
-                absolute = abs(total) if total is not None else None
-        return total, absolute
-
-    total = _coerce_scalar(final_value)
-    if total is None:
-        return None, None
-    if isinstance(total, list):
-        return total, [abs(v) for v in total]
-    return total, abs(total)
+# ---------------------------------------------------------------------------
+# Magmom convergence table
+# ---------------------------------------------------------------------------
 
 
 def generate_magmom_summary_table(
@@ -263,17 +301,15 @@ def generate_magmom_summary_table(
     else:
         final_magnetism = output_params.get("magnetization") or {}
 
-    # Fall back to the keys present in ``final_magnetism`` / ``final_energy``
-    # when ``magmom_list`` is missing from the WorkChain output. This happens
-    # for older runs whose ``parse_and_gather_magmom_results`` calcfunction
-    # did not stash the original list, in which case the initial-magmom
-    # column is shown as ``—`` but the final values are still rendered.
     candidate_keys = list(final_magnetism.keys())
     if not candidate_keys:
         candidate_keys = list(final_energy.keys())
 
     if magmom_list:
-        rows = [(idx, _initial_mag_from_list_entry(entry)) for idx, entry in enumerate(magmom_list)]
+        rows = [
+            (idx, _initial_mag_from_list_entry(entry))
+            for idx, entry in enumerate(magmom_list)
+        ]
     else:
         rows = [(idx, "—") for idx in range(len(candidate_keys))]
 
@@ -304,42 +340,63 @@ def generate_magmom_summary_table(
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Top-level report
+# ---------------------------------------------------------------------------
+
+
 def generate_report(output_params: Dict[str, Any], pk: int, workflow_type: str) -> str:
-    """Generate a complete Markdown report for a magmom WorkChain.
-
-    Args:
-        output_params: ``output_parameters`` dict from the WorkChain.
-        pk: pk of the parent WorkChain.
-        workflow_type: ``"abacus"`` or ``"vasp"``.
-
-    Returns:
-        Markdown report as a string.
-    """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    lines: List[str] = []
-    lines.append(f"# Magmom WorkChain Report (PK: {pk})")
-    lines.append("")
-    lines.append(f"**Workflow Type**: {workflow_type.upper()}")
-    lines.append(f"**Generated**: {timestamp}")
-    lines.append("")
-    lines.append("## Summary")
-    lines.append("")
-    lines.append(generate_summary_table(output_params))
-    lines.append("")
+    """Generate a complete Markdown report for a magmom WorkChain."""
+    lines: List[str] = [
+        render_report_header(
+            title="Magmom WorkChain Report",
+            workflow_type=workflow_type,
+            pk=pk,
+        ),
+        "",
+        "## Summary",
+        "",
+        generate_summary_table(output_params),
+        "",
+    ]
 
     if "status" in output_params:
-        lines.append("## Calculation Status")
-        lines.append("")
-        lines.append(generate_status_table(output_params["status"]))
-        lines.append("")
+        lines += [
+            "## Calculation Status",
+            "",
+            generate_status_table(output_params["status"]),
+            "",
+        ]
 
-    lines.append("## Magmom Convergence")
-    lines.append("")
-    lines.append(generate_magmom_summary_table(output_params, workflow_type))
+    if "final_energy" in output_params and output_params["final_energy"]:
+        lines += [
+            "## Final Energy",
+            "",
+            generate_energy_table(output_params["final_energy"]),
+            "",
+        ]
 
-    lines.append("")
-    lines.append("---")
-    lines.append("*Generated by aiida-uranium-workflow*")
+    if "wall_time_seconds" in output_params and output_params["wall_time_seconds"]:
+        lines += [
+            "## Wall Time [s]",
+            "",
+            generate_wall_time_table(output_params["wall_time_seconds"]),
+            "",
+        ]
+
+    # Backend-specific magnetism section.
+    if workflow_type == "abacus":
+        lines += _render_abacus_section(output_params)
+    else:
+        lines += _render_vasp_section(output_params)
+
+    lines += [
+        "",
+        "## Magmom Convergence",
+        "",
+        generate_magmom_summary_table(output_params, workflow_type),
+        "",
+        render_report_footer(),
+    ]
 
     return "\n".join(lines)

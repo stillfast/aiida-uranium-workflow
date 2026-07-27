@@ -35,6 +35,7 @@ from __future__ import annotations
 from aiida import load_profile
 from aiida.tools.archive import create_archive
 from aiida_uranium_workflow.cli._common import (
+    MethodSpec,
     _short_id,
     build_unified_parser,
     collect_pk_map,
@@ -43,6 +44,7 @@ from aiida_uranium_workflow.cli._common import (
     generate_one_report,
     get_method_spec,
     list_archive_pks,
+    resolve_method,
 )
 from aiida_uranium_workflow.utils.cal_json import write_cal_json
 from aiida_uranium_workflow.utils.copy_remote import (
@@ -56,8 +58,30 @@ import sys
 from pathlib import Path
 
 
+def _resolve(args, *, log_tag: str) -> tuple[str, MethodSpec] | None:
+    """Resolve method → ``(name, MethodSpec)`` or ``None`` on error.
+
+    Logs the resolution source to stderr and prints a helpful hint so
+    users can tell where the method came from. Returns ``None`` when
+    :func:`resolve_method` raises; the caller should then ``return 1``.
+    """
+    try:
+        method = resolve_method(
+            cli_method=getattr(args, "method", None),
+            input_json=getattr(args, "input_json", None),
+            output_json=getattr(args, "input_json", None),
+        )
+    except ValueError as exc:
+        print(f"[{log_tag}] {exc}", file=sys.stderr)
+        return None
+    return method, get_method_spec(method)
+
+
 def _run(args) -> int:
-    spec = get_method_spec(args.method)
+    resolved = _resolve(args, log_tag=f"{getattr(args, 'method', None) or 'auto'}-run")
+    if resolved is None:
+        return 1
+    method, spec = resolved
 
     submitted = execute_workflow(
         input_json=args.input_json,
@@ -86,7 +110,10 @@ def _run(args) -> int:
 
 
 def _report(args) -> int:
-    spec = get_method_spec(args.method)
+    resolved = _resolve(args, log_tag=f"{getattr(args, 'method', None) or 'auto'}-report")
+    if resolved is None:
+        return 1
+    method, spec = resolved
 
     input_path = Path(args.input_json)
     try:
@@ -142,7 +169,10 @@ def _report(args) -> int:
 
 
 def _archive(args) -> int:
-    spec = get_method_spec(args.method)
+    resolved = _resolve(args, log_tag="archive")
+    if resolved is None:
+        return 1
+    method, spec = resolved
     try:
         pk_map = collect_pk_map(args.input_json)
     except ValueError as exc:
@@ -207,7 +237,10 @@ def _archive(args) -> int:
 
 
 def _copy(args) -> int:
-    spec = get_method_spec(args.method)
+    resolved = _resolve(args, log_tag=f"{getattr(args, 'method', None) or 'auto'}-copy")
+    if resolved is None:
+        return 1
+    method, spec = resolved
 
     if args.profile:
         load_profile(args.profile)

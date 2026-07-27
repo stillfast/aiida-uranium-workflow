@@ -62,18 +62,24 @@ def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
         )
 
     x = entry["x"]
-    # pyxtal accepts two layouts for the ``x`` 1D array:
-    #   * ``[lat_const]``           — special Wyckoff positions only;
-    #     fractional coords are inferred from the space group.
-    #   * ``[lat_const, fx1,fy1,fz1, ...]`` — one triplet per Wyckoff
-    #     site, used when the symmetry alone doesn't fix the coords.
-    if not isinstance(x, list) or len(x) < 1 or (
-        len(x) != 1 and (len(x) - 1) % 3 != 0
-    ):
+    if not isinstance(x, list) or len(x) < 1:
         raise ValueError(
-            f"Structure '{atom_name}': 'x' must be either [lat_const_A] "
-            f"or [lat_const_A, fx1, fy1, fz1, ...] "
-            f"(got {len(x)} value(s) for {len(wps)} site(s))"
+            f"Structure '{atom_name}': 'x' must be a non-empty list"
+        )
+
+    # ``x`` mirrors ``gamma0_uranium.py``'s shape:
+    #     x = cell_params + [c for coords in site_coords for c in coords]
+    # The leading entries are the lattice parameters
+    # (a, c for SG 129; a for cubic; a, b, c for orthorhombic; …),
+    # the trailing ``len(wps)`` entries are the free fractional
+    # coordinates, one per Wyckoff site. The number of lattice
+    # parameters is therefore ``len(x) - len(wps)``.
+    n_lattice = len(x) - len(wps)
+    if n_lattice < 1:
+        raise ValueError(
+            f"Structure '{atom_name}': 'x' has {len(x)} value(s) but there "
+            f"are {len(wps)} Wyckoff site(s); at least one lattice "
+            f"parameter is required."
         )
     a = [float(v) for v in x]
 

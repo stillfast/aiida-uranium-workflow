@@ -14,13 +14,13 @@ gamma-uranium:
   spacegroup: 129
   elements: ["U", "U"]
   wickoff_position: ["a","c"]
-  x: [4.995, 3.532, 0, 0.5]
+  x: [4.995, 3.532, 0.5]
 
 gamma0-uranium: 
   spacegroup: 129
   elements: ["U", "U"]
   wickoff_position: ["a","c"]
-  x: [4.995, 3.532, 0, 0.45]
+  x: [4.995, 3.532, 0.45]
 
 U-X/FCC:
   spacegroup: 225

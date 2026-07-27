@@ -521,8 +521,8 @@ class TestSubCategoryBackendSlot:
                     "parameters": {
                         "abacus": {
                             "magmom": [
-                                "test_magmom_pw_pz",
-                                "test_magmom_pw_pbe",
+                                "qe_pw_pz",
+                                "qe_pw_pbe",
                             ]
                         },
                         "magmom": "test",
@@ -550,8 +550,8 @@ class TestSubCategoryBackendSlot:
         abacus_presets = bundle.software_params["abacus"]
         assert len(abacus_presets) == 2
 
-        # ``test_magmom_pw_pz`` uses qeU-pz, ``test_magmom_pw_pbe`` uses
-        # qeU-pbe — both live only in parameters/abacus/magmom.yml.
+        # ``qe_pw_pz`` uses qeU-pz, ``qe_pw_pbe`` uses qeU-pbe — both
+        # live only in parameters/abacus/magmom.yml.
         assert abacus_presets[0]["pseudo_family"] == "qeU-pz"
         assert abacus_presets[1]["pseudo_family"] == "qeU-pbe"
 
@@ -573,14 +573,19 @@ class TestSubCategoryBackendSlot:
     def test_dict_form_uses_default_when_string_value(
         self, tmp_path: Path
     ) -> None:
-        """A single string inside the dict still works."""
+        """A single string inside the dict still works.
+
+        The string is taken as a preset name inside the category YAML
+        (``parameters/abacus/magmom.yml``); ``lcao`` is the first
+        preset there with ``pseudo_family: sg15_sz``.
+        """
         path = tmp_path / "input.json"
         path.write_text(
             json.dumps(
                 {
                     "workflow": "magmom",
                     "parameters": {
-                        "abacus": {"magmom": "test_magmom"},
+                        "abacus": {"magmom": "lcao"},
                         "magmom": "test",
                     },
                     "static": {

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -35,11 +35,21 @@ class SoftwareAdapter(ABC):
         software_params: dict[str, Any],
         metadata: dict[str, Any],
         workflow_data: Dict[str, Any],
+        *,
+        extra_codes: Optional[Dict[str, str]] = None,
     ) -> None:
         self.code_label = code_label
         self.software_params = software_params
         self.metadata = metadata
         self.workflow_data = workflow_data
+        # ``extra_codes`` carries any sibling AiiDA code labels the
+        # adapter may need to forward into nested namespaces (e.g.
+        # FLEUR's ``inpgen`` inside the SCF namespace). Adapters that
+        # don't need extras simply ignore this dict. The orchestrator
+        # passes the entire ``input.json["code"]`` dict so the adapter
+        # can ``extra_codes.get("inpgen")`` etc. without the caller
+        # having to know which codes are relevant.
+        self.extra_codes: Dict[str, str] = dict(extra_codes or {})
 
     # ---- subclasses must implement ---------------------------------------
 

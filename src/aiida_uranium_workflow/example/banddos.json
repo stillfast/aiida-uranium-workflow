@@ -1,0 +1,18 @@
+{
+    "workflow": "banddos",
+    "parameters": {
+        "abacus": {"banddos": ["pw_r", "lcao_r"]},
+        "fleur":  {"banddos": ["U-0K-NM-nosoc", "U-0K-NM-soc"]},
+        "banddos": "test"
+    },
+    "static": {
+        "structure": "bcc-uranium",
+        "metadata": "yeesuan"
+    },
+    "profile": "aiida_profile",
+    "code": {
+        "abacus": "abacus@yeesuan",
+        "fleur":  "fleur@yeesuan",
+        "inpgen": "inpgen@yeesuan"
+    }
+}

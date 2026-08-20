@@ -167,11 +167,24 @@ class TestDefaultResultPath:
 class TestMethodSpecBackendToKey:
     """``backend_to_key`` is wired up for every method in the registry."""
 
-    @pytest.mark.parametrize("method", list(METHOD_SPECS))
+    @pytest.mark.parametrize(
+        "method",
+        [m for m in METHOD_SPECS if m != "banddos"],
+    )
     def test_backend_to_key_covers_abacus_and_vasp(self, method):
         spec = METHOD_SPECS[method]
         assert "abacus" in spec.backend_to_key
         assert "vasp" in spec.backend_to_key
+
+    def test_banddos_only_has_abacus(self):
+        """banddos is ABACUS-only — the FLEUR / VASP paths use separate
+        WorkChain entry-points (``fleur.banddos`` lives in
+        ``workflows/banddos/fleur.py`` as a wrapper around the plugin
+        ``FleurBandAndDosWorkChain``). The banddos method spec therefore
+        lists only ``"abacus"`` in its ``backend_to_key`` mapping."""
+        spec = METHOD_SPECS["banddos"]
+        assert "abacus" in spec.backend_to_key
+        assert "vasp" not in spec.backend_to_key
 
 
 class TestShortIdPassthrough:

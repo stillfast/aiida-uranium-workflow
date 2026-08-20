@@ -376,6 +376,12 @@ class WorkflowOrchestrator:
             software_params=preset,
             metadata=self.bundle.metadata,
             workflow_data=self.bundle.workflow_data,
+            # Pass the full ``input.json["code"]`` mapping so adapters
+            # that need sibling codes (e.g. FLEUR's ``inpgen`` inside
+            # the SCF namespace) can pull them from
+            # ``self.extra_codes`` without us hard-coding backend-specific
+            # knowledge here.
+            extra_codes=dict(self.bundle.input_params.get("code", {})),
         )
         adapted = builder.adapt(structure)
         return submit(adapted.workchain_cls, **adapted.inputs)

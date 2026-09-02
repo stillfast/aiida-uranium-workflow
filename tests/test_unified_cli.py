@@ -294,3 +294,34 @@ class TestGenerateOneReportSkips:
         status = self._call(monkeypatch, tmp_path, FakeWorkchain(), "ok")
         assert status.startswith("ok ->")
         assert (tmp_path / "report.md").read_text() == "# report"
+
+
+# ---------------------------------------------------------------------------
+# check / example / plot subcommands (improve.md Phase C)
+# ---------------------------------------------------------------------------
+
+
+def test_parser_has_new_commands():
+    from aiida_uranium_workflow.cli._common import build_unified_parser
+
+    parser = build_unified_parser()
+    # argparse exposes subcommands as choices of the 'command' dest
+    choices = {
+        a.dest: a
+        for a in parser._actions
+        if getattr(a, "dest", None) == "command"
+    }
+    sub = next(iter(choices.values()))
+    for name in ("check", "example", "plot"):
+        assert name in sub.choices
+
+
+def test_example_templates_cover_all_methods():
+    from aiida_uranium_workflow.cli._common import SUPPORTED_METHODS
+    from aiida_uranium_workflow.cli.main import _EXAMPLE_INPUTS
+
+    for method in SUPPORTED_METHODS:
+        assert method in _EXAMPLE_INPUTS, method
+        t = _EXAMPLE_INPUTS[method]
+        assert t["workflow"] == method
+        assert "static" in t and "code" in t

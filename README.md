@@ -18,8 +18,11 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
 * **JSON-driven orchestration** — `input.json` (workflow, per-backend presets,
   structure, profile, codes) → `output.json` (WorkChain UUID map). No Python
   scripting needed for routine runs.
-* **Unified CLI** — `aiida-uranium {run, report, archive, copy}` plus
-  `aiida-uranium-plot-banddos` / `aiida-uranium-plot-phonon`.
+* **Unified CLI** — `aiida-uranium {run, report, archive, copy, check,
+  example, plot}`; `check` dry-runs an input.json, `example` writes a
+  reference input.json, and `plot` renders band / DOS / phonon figures
+  (band_compare included) by spec `mode` — superseding the legacy
+  `aiida-uranium-plot-banddos` / `aiida-uranium-plot-phonon` scripts.
 * **Markdown reports** per method (`utils/report/`), **matplotlib figures**
   (`utils/plot/`), **AiiDA archive export** and **remote-folder copy**.
 * **Band comparison** — pairwise η_v / max η / ω metrics (PRB 98, 085117,
@@ -87,7 +90,7 @@ in the companion `aiida-uranium-scripts/` repository.
 ```bash
 aiida-uranium run -i input.json --method magmom
 aiida-uranium report -i output.json --method magmom     # Markdown report
-aiida-uranium-plot-banddos -i band_compare.json         # band / DOS / compare figures
+aiida-uranium plot -i band.json / band_compare.json     # band / DOS / compare figures
 ```
 
 ## Architecture

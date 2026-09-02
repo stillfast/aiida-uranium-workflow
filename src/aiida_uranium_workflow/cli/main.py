@@ -305,11 +305,204 @@ def _copy(args) -> int:
     return 1 if failures else 0
 
 
+#: Reference input.json templates per method (``aiida-uranium example``).
+#: Code names are placeholders — replace them with your installed codes.
+_EXAMPLE_INPUTS: dict[str, dict] = {
+    "base": {
+        "workflow": "base",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "base": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "smear": {
+        "workflow": "smear",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "smear": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "convergence": {
+        "workflow": "convergence",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "convergence": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "magmom": {
+        "workflow": "magmom",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "magmom": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "banddos": {
+        "workflow": "banddos",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "banddos": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "relax": {
+        "workflow": "relax",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "relax": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "elastic": {
+        "workflow": "elastic",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "elastic": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "eos": {
+        "workflow": "eos",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "eos": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "phonopy": {
+        "workflow": "phonopy",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "phonopy": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "defects": {
+        "workflow": "defects",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "defects": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+    "supercell": {
+        "workflow": "supercell",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "supercell": "test555"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
+}
+
+
+def _check(args) -> int:
+    """Dry-run: parse + validate the input.json, print the execution plan."""
+    from pathlib import Path
+
+    from aiida_uranium_workflow.utils.config import ConfigLoader
+
+    input_path = Path(args.input_json)
+    try:
+        bundle = ConfigLoader(input_path).load_all()
+    except Exception as exc:  # noqa: BLE001 — surface any validation failure
+        print(f"[check] invalid input: {exc}", file=sys.stderr)
+        return 1
+
+    ip = bundle.input_params
+    workflow = ip.get("workflow", "?")
+    profile = args.profile or ip.get("profile", "?")
+    print(f"workflow: {workflow} | profile: {profile}")
+    static = ip.get("static", {})
+    print(f"structure: {static.get('structure', '?')} | "
+          f"metadata: {static.get('metadata', '?')}")
+
+    # One line per (backend, preset).
+    for backend, entries in bundle.software_params.items():
+        if not entries:
+            continue
+        presets = []
+        for entry in entries:
+            code = ip.get("code", {}).get(backend, "?")
+            presets.append(f"{entry.get('preset', '?')}"
+                           f"@code:{code}")
+        print(f"backend {backend}: {', '.join(presets)}")
+
+    wf_presets = bundle.workflow_presets
+    if wf_presets:
+        print(f"protocol presets: {', '.join(wf_presets)}")
+    codes = ip.get("code", {})
+    if codes:
+        print("codes: " + ", ".join(f"{k}={v}" for k, v in codes.items()))
+    print("[check] configuration OK — nothing submitted.")
+    return 0
+
+
+def _example(args) -> int:
+    """Generate a reference input.json for one method."""
+    import json
+    from pathlib import Path
+
+    method = args.method or args.method_name
+    if method is None:
+        print("[example] --method is required", file=sys.stderr)
+        return 1
+
+    template = _EXAMPLE_INPUTS.get(method)
+    if template is None:
+        print(
+            f"[example] no template for method '{method}'; "
+            f"available: {sorted(_EXAMPLE_INPUTS)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    out_dir = (
+        Path(args.output_dir) if args.output_dir else Path.cwd() / "examples"
+    )
+    out_dir = out_dir / method
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "input.json"
+    out_path.write_text(json.dumps(template, indent=4, ensure_ascii=False) + "\n")
+    print(f"[example] wrote reference input to {out_path}")
+    print("[example] NOTE: replace the placeholder code names before running.")
+    return 0
+
+
+def _plot(args) -> int:
+    """Render figures from spec JSONs; dispatch on each spec's mode."""
+    from pathlib import Path
+
+    from aiida_uranium_workflow.cli.plot._loading import load_spec
+    from aiida_uranium_workflow.cli.plot._rendering import (
+        render_band_compare,
+        render_spec,
+    )
+    from aiida_uranium_workflow.utils.plot.phonon import render_phonon_spec
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    failures = 0
+    for spec_path in args.specs:
+        spec_path = Path(spec_path)
+        try:
+            spec = load_spec(spec_path)
+            mode = getattr(spec, "mode", None)
+            if mode == "phonon":
+                paths = render_phonon_spec(spec, out_dir)
+            elif mode == "band_compare":
+                paths = render_band_compare(spec, out_dir)
+            else:
+                paths = render_spec(spec, out_dir)
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            print(f"[plot] {spec_path}: failed: {exc}", file=sys.stderr)
+            failures += 1
+            continue
+        for path in paths:
+            print(f"[plot] {spec_path} -> {path}")
+    return 1 if failures else 0
+
+
 _DISPATCH = {
     "run": _run,
     "report": _report,
     "archive": _archive,
     "copy": _copy,
+    "check": _check,
+    "example": _example,
+    "plot": _plot,
 }
 
 

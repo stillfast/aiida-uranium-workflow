@@ -767,6 +767,89 @@ def build_unified_parser(
         help="Only list the node identifiers that would be archived.",
     )
 
+    # check ---------------------------------------------------------------
+    check_p = sub.add_parser(
+        "check",
+        prog=f"{prog} check",
+        help="Dry-run validate an input.json and preview what would run.",
+        description=(
+            "Parse and validate the input.json against the workflow "
+            "protocol / static tables (no AiiDA process is submitted). "
+            "Prints the resolved backends, presets, structure / metadata "
+            "and codes; exits non-zero when the configuration is invalid."
+        ),
+    )
+    check_p.add_argument(
+        "-i",
+        "--input",
+        dest="input_json",
+        required=True,
+        help="Path to the unified input JSON file.",
+    )
+    check_p.add_argument(
+        "-p",
+        "--profile",
+        default=None,
+        help="AiiDA profile name (overrides input.json['profile']).",
+    )
+
+    # example -------------------------------------------------------------
+    example_p = sub.add_parser(
+        "example",
+        prog=f"{prog} example",
+        help="Generate a reference input.json for a method.",
+        description=(
+            "Write a minimal runnable input.json (structure / metadata "
+            "presets resolved, code names are placeholders you must "
+            "replace) into examples/<method>/."
+        ),
+    )
+    example_p.add_argument(
+        "-m",
+        "--method",
+        type=parse_method,
+        default=None,
+        help=(
+            "Workflow method (base / smear / convergence / magmom / "
+            "banddos / relax / elastic / eos / phonopy / defects / "
+            "supercell). Required."
+        ),
+    )
+    example_p.add_argument(
+        "-o",
+        "--output-dir",
+        dest="output_dir",
+        default=None,
+        help="Directory to write into (default: ./examples).",
+    )
+
+    # plot ----------------------------------------------------------------
+    plot_p = sub.add_parser(
+        "plot",
+        prog=f"{prog} plot",
+        help="Render band / DOS / pdos / band-compare / phonon figures.",
+        description=(
+            "Replaces aiida-uranium-plot-banddos / aiida-uranium-plot-"
+            "phonon: read one or more spec JSON files and dispatch on "
+            "their 'mode' (band / dos / pdos / band_compare / phonon)."
+        ),
+    )
+    plot_p.add_argument(
+        "-i",
+        "--input",
+        dest="specs",
+        required=True,
+        nargs="+",
+        help="One or more JSON spec files.",
+    )
+    plot_p.add_argument(
+        "-o",
+        "--output-dir",
+        dest="output_dir",
+        default=".",
+        help="Directory to write figures into (default: current directory).",
+    )
+
     return p
 
 

@@ -177,7 +177,7 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parser_energy_time import fetch_vasp
+    from aiida_uranium_workflow.utils.parsers import fetch_vasp
 
     total_energy = {}
     num_atoms = {}

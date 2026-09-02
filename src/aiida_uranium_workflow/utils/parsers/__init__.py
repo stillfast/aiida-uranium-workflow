@@ -36,7 +36,6 @@ from __future__ import annotations
 import re
 from typing import Optional, Tuple
 
-
 # ---------------------------------------------------------------------------
 # Pure helpers (no AiiDA imports) — easy to unit-test
 # ---------------------------------------------------------------------------
@@ -159,9 +158,7 @@ def fetch_vasp(node) -> Tuple[Optional[float], Optional[float]]:
     return energy, cpu_time
 
 
-def fetch_energy_time(
-    node, backend: str
-) -> Tuple[Optional[float], Optional[float]]:
+def fetch_energy_time(node, backend: str) -> Tuple[Optional[float], Optional[float]]:
     """Dispatch to the right parser based on ``backend``.
 
     ``backend`` is the canonical name (``"abacus"`` / ``"vasp"``).
@@ -172,3 +169,66 @@ def fetch_energy_time(
     if backend == "vasp":
         return fetch_vasp(node)
     raise ValueError(f"Unknown backend '{backend}'; expected 'abacus' or 'vasp'")
+
+
+# ---------------------------------------------------------------------------
+# Unified summary schema (improve.md Phase A)
+# ---------------------------------------------------------------------------
+
+
+def _count_abacus_elec_steps(retrieved) -> Optional[int]:
+    """Count electronic SCF steps from ``OUT.aiida/running_scf.log``.
+
+    ABACUS prints one ``ION=   1  ELEC=   n`` line per electronic step in
+    the fixed-lattice SCF log; the count of such lines is the number of
+    electronic iterations. Returns ``None`` when the log can't be read.
+    """
+    log_text = _read_abacus_log(retrieved, "running_scf.log")
+    if log_text is None:
+        return None
+    steps = len(re.findall(r"ION=\s*\d+\s+ELEC=\s*\d+", log_text))
+    return steps if steps else None
+
+
+def fetch_summary(node, backend: str) -> dict:
+    """Unified per-calculation summary used by every WorkChain report.
+
+    Returns a single dict with the canonical field names (all optional
+    values are ``None`` when unavailable)::
+
+        {
+            "energy_ev": float | None,   # backend-native energy in eV
+            "time_s":    float | None,   # wall-clock (ABACUS log / VASP cpu)
+            "natoms":    int | None,
+            "scf_steps": int | None,     # electronic iterations
+        }
+
+    ``backend`` is ``"abacus"`` / ``"vasp"``. The energy / time fields
+    reuse :func:`fetch_abacus` / :func:`fetch_vasp`; ``natoms`` is the
+    site count of the calc's input structure; ``scf_steps`` counts the
+    electronic iterations from the log (ABACUS) or is ``None`` when the
+    backend parser does not expose them (VASP).
+    """
+    if backend == "abacus":
+        energy, time_s = fetch_abacus(node)
+        try:
+            natoms = len(node.inputs.abacus.structure.sites)
+        except Exception:  # noqa: BLE001 — inputs missing
+            natoms = None
+        scf_steps = _count_abacus_elec_steps(node.outputs.retrieved)
+    elif backend == "vasp":
+        energy, time_s = fetch_vasp(node)
+        try:
+            natoms = len(node.inputs.structure.sites)
+        except Exception:  # noqa: BLE001
+            natoms = None
+        scf_steps = None
+    else:
+        raise ValueError(f"Unknown backend '{backend}'; expected 'abacus' or 'vasp'")
+
+    return {
+        "energy_ev": energy,
+        "time_s": time_s,
+        "natoms": natoms,
+        "scf_steps": scf_steps,
+    }

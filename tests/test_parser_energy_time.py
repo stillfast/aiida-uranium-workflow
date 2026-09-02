@@ -1,4 +1,4 @@
-"""Tests for ``utils.parser_energy_time`` — energy + wall-time parser.
+"""Tests for ``utils.parsers`` — the shared energy + wall-time parser.
 
 These tests focus on the **pure helpers** (``parse_total_time``,
 ``parse_abacus_last_energy``) so they don't need a real AiiDA profile.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aiida_uranium_workflow.utils.parser_energy_time import (
+from aiida_uranium_workflow.utils.parsers import (
     parse_abacus_last_energy,
     parse_total_time,
 )
@@ -98,4 +98,4 @@ def test_import_without_aiida_profile():
     fixtures to import the module without profile setup.
     """
     # No exception ⇒ the module is import-safe.
-    from aiida_uranium_workflow.utils import parser_energy_time  # noqa: F401
+    from aiida_uranium_workflow.utils import parsers as parser_energy_time  # noqa: F401

@@ -147,7 +147,7 @@ def parse_and_gather_magmom_results(child_pks):
     """
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parser_energy_time import fetch_abacus
+    from aiida_uranium_workflow.utils.parsers import fetch_abacus
 
     magnetism = {}
     final_magnetism = {}

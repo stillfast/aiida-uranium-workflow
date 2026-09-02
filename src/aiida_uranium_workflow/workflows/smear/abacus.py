@@ -196,9 +196,7 @@ class AbacusSmearWorkChain(WorkChain):
 
             child_pks.append(child.pk)
 
-        results_node = parse_and_gather_smear_results(
-            child_pks=orm.List(child_pks)
-        )
+        results_node = parse_and_gather_smear_results(child_pks=orm.List(child_pks))
 
         self.out("output_parameters", results_node)
 
@@ -211,7 +209,7 @@ def parse_and_gather_smear_results(child_pks):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parser_energy_time import fetch_abacus
+    from aiida_uranium_workflow.utils.parsers import fetch_summary
 
     eentropy = {}
     num_atoms = {}
@@ -233,29 +231,24 @@ def parse_and_gather_smear_results(child_pks):
         # failures explicitly. ``exit_status`` is ``None`` for
         # unfinished processes; we render that as ``-1`` so the
         # Markdown table shows a non-empty cell.
-        status[label] = (
-            int(child.exit_status)
-            if child.exit_status is not None
-            else -1
-        )
+        status[label] = int(child.exit_status) if child.exit_status is not None else -1
 
         if not child.is_finished_ok:
             continue
 
-        # Energy + wall-time come from misc / log files via the shared
-        # parser. We collect them independently of eentropy so a
-        # failed eentropy parse doesn't drop the energy data.
+        # Unified parser: energy / wall-time / natoms in one call.
+        # Collected independently of eentropy so a failed eentropy
+        # parse doesn't drop the energy data.
         try:
-            energy, wall_time = fetch_abacus(child)
-            total_energy[label] = energy
-            wall_time_seconds[label] = wall_time
+            summary = fetch_summary(child, "abacus")
+            total_energy[label] = summary["energy_ev"]
+            wall_time_seconds[label] = summary["time_s"]
         except Exception as e:  # noqa: BLE001 — defensive: misc missing
             total_energy[label] = f"Parsing failed: {str(e)}"
             wall_time_seconds[label] = None
 
         try:
             retrieved = child.outputs.retrieved
-            structure = child.inputs.abacus.structure
 
             with retrieved.open("OUT.aiida/running_scf.log") as f:
                 lines = f.readlines()
@@ -270,11 +263,12 @@ def parse_and_gather_smear_results(child_pks):
 
             if eentropy_values:
                 last_eentropy = eentropy_values[-1]
-                n_atoms = len(structure.sites)
+                n_atoms = summary.get("natoms")
 
                 eentropy[label] = last_eentropy
-                num_atoms[label] = n_atoms
-                eentropy_per_atom[label] = last_eentropy / n_atoms
+                if n_atoms:
+                    num_atoms[label] = n_atoms
+                    eentropy_per_atom[label] = last_eentropy / n_atoms
             else:
                 eentropy[label] = None
 

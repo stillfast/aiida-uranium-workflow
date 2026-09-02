@@ -9,7 +9,6 @@ import pytest
 from aiida_uranium_workflow.schedulers.magmom import parse_magmom_protocol
 from aiida_uranium_workflow.workflows.magmom.qe import (
     QeMagmomWorkChain,
-    _magmom_to_label,
 )
 
 
@@ -23,11 +22,6 @@ class TestDefinition:
         assert QeMagmomWorkChain.exit_codes.SUCCESS.status == 0
         assert QeMagmomWorkChain.exit_codes.ERROR_CHILD.status == 300
         assert QeMagmomWorkChain.exit_codes.ERROR_PARSER.status == 305
-
-    def test_magmom_to_label(self):
-        assert _magmom_to_label({"U": 2.0}) == "U_2"
-        assert _magmom_to_label({"U": 0.5}) == "U_0_5"
-        assert _magmom_to_label({"U": -4.0}) == "U_m4"
 
 
 class TestProtocolParser:

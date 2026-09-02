@@ -7,7 +7,6 @@ pytest_plugins = ["aiida.tools.pytest_fixtures"]
 from aiida import orm
 from aiida_uranium_workflow.workflows.magmom.vasp import (
     VaspMagmomWorkChain,
-    _magmom_to_label,
     parse_and_gather_magmom_results,
 )
 
@@ -42,25 +41,10 @@ def test_workchain_exit_codes():
 # ---------------------------------------------------------------------------
 
 
-def test_magmom_to_label_scalar():
-    """``_magmom_to_label`` should render scalar values as ``element_value``."""
-    assert _magmom_to_label({"Si": 1.0}) == "Si_1"
-    assert _magmom_to_label({"Si": -1.0}) == "Si_m1"
 
 
-def test_magmom_to_label_vector():
-    """``_magmom_to_label`` should join per-site lists with underscores."""
-    assert _magmom_to_label({"Si": [1.0, -1.0]}) == "Si_1_m1"
 
 
-def test_magmom_to_label_multi_species():
-    """Multiple species should be joined with ``__``."""
-    assert _magmom_to_label({"Si": 1.0, "U": 0.5}) == "Si_1__U_0_5"
-
-
-# ---------------------------------------------------------------------------
-# Input / outputs construction
-# ---------------------------------------------------------------------------
 
 
 def test_generate_inputs(aiida_profile_clean):

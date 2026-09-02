@@ -14,7 +14,6 @@ from aiida_pseudo.data.pseudo import UpfData
 from aiida_pseudo.groups.family import PseudoPotentialFamily
 from aiida_uranium_workflow.workflows.magmom.abacus import (
     AbacusMagmomWorkChain,
-    _mag_to_label,
     parse_and_gather_magmom_results,
 )
 
@@ -207,16 +206,6 @@ def test_workchain_instantiation(
 # ---------------------------------------------------------------------------
 
 
-def test_mag_to_label():
-    """Verify the filesystem-friendly label produced by ``_mag_to_label``."""
-    assert _mag_to_label([1.0, 1.0]) == "1_1"
-    assert _mag_to_label([1.0, -1.0]) == "1_m1"
-    assert _mag_to_label([[1.0], [-1.0]]) == "1_m1"
-
-
-# ---------------------------------------------------------------------------
-# Behaviour
-# ---------------------------------------------------------------------------
 
 
 def test_gather_results_no_children(aiida_profile_clean, generate_workchain_abacus_magmom):

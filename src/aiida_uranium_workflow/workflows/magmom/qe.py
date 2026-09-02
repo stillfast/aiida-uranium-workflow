@@ -20,6 +20,7 @@ from __future__ import annotations
 from aiida import orm
 from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
+from aiida_uranium_workflow.utils.labels import format_magmom_label
 
 ChildWorkChain = WorkflowFactory("quantumespresso.pw.base")
 
@@ -70,7 +71,7 @@ class QeMagmomWorkChain(WorkChain):
         pw_base = dict(base_inputs.get("pw", {}))
 
         for idx, mag_value in enumerate(self.inputs.magmom_list.get_list()):
-            label = f"magmom_{idx:03d}_{_magmom_to_label(mag_value)}"
+            label = format_magmom_label(mag_value, index=idx)
 
             params = deepcopy(pw_base["parameters"].get_dict())
             system = params.setdefault("SYSTEM", {})
@@ -94,7 +95,7 @@ class QeMagmomWorkChain(WorkChain):
     def gather_results(self):
         """Parse the QE magnetism outputs of each child and package them."""
         labels = [
-            f"magmom_{idx:03d}_{_magmom_to_label(v)}"
+            format_magmom_label(v, index=idx)
             for idx, v in enumerate(self.inputs.magmom_list.get_list())
         ]
         all_finished_ok = all(
@@ -163,19 +164,3 @@ def parse_and_gather_qe_magmom_results(child_pks):
         "wall_time_seconds": wall_time_seconds,
         "status": status,
     })
-
-
-def _magmom_to_label(mag_value) -> str:
-    """Render a per-species magmom dict as a filesystem-friendly label."""
-    if isinstance(mag_value, dict):
-        parts = []
-        for element, value in mag_value.items():
-            if isinstance(value, (list, tuple)):
-                v = "_".join(f"{float(x):g}" for x in value)
-            else:
-                v = f"{float(value):g}"
-            parts.append(f"{element}_{v}")
-        body = "__".join(parts)
-    else:
-        body = f"{float(mag_value):g}"
-    return body.replace(".", "_").replace("-", "m")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiida import orm
 from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
-from itertools import product
+from aiida_uranium_workflow.utils.labels import format_magmom_label
 
 ChildWorkChain = WorkflowFactory("vasp.v2.vasp")
 
@@ -104,8 +104,7 @@ class VaspMagmomWorkChain(WorkChain):
         base_inputs = self.exposed_inputs(ChildWorkChain, agglomerate=True)
 
         for idx, mag_value in enumerate(magmom_entries):
-            mag_label = _magmom_to_label(mag_value)
-            label = f"magmom_{idx:03d}_{mag_label}"
+            label = format_magmom_label(mag_value, index=idx)
 
             child_inputs = dict(base_inputs)
             if kind == "per_atom":
@@ -140,8 +139,7 @@ class VaspMagmomWorkChain(WorkChain):
         child_pks = []
 
         for idx, mag_value in enumerate(magmom_entries):
-            mag_label = _magmom_to_label(mag_value)
-            label = f"magmom_{idx:03d}_{mag_label}"
+            label = format_magmom_label(mag_value, index=idx)
             child = getattr(self.ctx, label, None)
 
             if child is None:
@@ -215,29 +213,3 @@ def parse_and_gather_magmom_results(child_pks):
         "status": status,
     }
     return orm.Dict(result)
-
-
-def _magmom_to_label(mag_value):
-    """Render a magmom configuration as a filesystem-friendly label.
-
-    Accepts a per-species mapping dict (``{"U": 4.0}`` /
-    ``{"U": [1.0, -1.0]}``) or a per-atom list (``[4.0, -4.0]`` /
-    ``[[1.0, 0.0, 0.0], ...]``).
-    """
-    parts = []
-    if isinstance(mag_value, dict):
-        for element, value in mag_value.items():
-            if isinstance(value, (list, tuple)):
-                v = "_".join(f"{float(x):g}" for x in value)
-            else:
-                v = f"{float(value):g}"
-            parts.append(f"{element}_{v}")
-        body = "__".join(parts)
-    else:  # per-atom list: scalar per site, or 3-vector per site
-        for x in mag_value:
-            if isinstance(x, (list, tuple)):
-                parts.append("_".join(f"{float(v):g}" for v in x))
-            else:
-                parts.append(f"{float(x):g}")
-        body = "_".join(parts)
-    return body.replace(".", "_").replace("-", "m")

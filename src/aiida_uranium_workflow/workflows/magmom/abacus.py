@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiida import orm
 from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
-from itertools import product
+from aiida_uranium_workflow.utils.labels import format_magmom_label
 
 ChildWorkChain = WorkflowFactory("abacus.base")
 
@@ -75,8 +75,7 @@ class AbacusMagmomWorkChain(WorkChain):
             return self.exit_codes.ERROR_PARSER
 
         for idx, mag_value in enumerate(magmom_list):
-            mag_label = _mag_to_label(mag_value)
-            label = f"magmom_{idx:03d}_{mag_label}"
+            label = format_magmom_label(mag_value, index=idx)
 
             param_dict = abacus_block.parameters.get_dict()
             stru = param_dict.setdefault("stru", {})
@@ -116,8 +115,7 @@ class AbacusMagmomWorkChain(WorkChain):
         child_pks = []
 
         for idx, mag_value in enumerate(magmom_list):
-            mag_label = _mag_to_label(mag_value)
-            label = f"magmom_{idx:03d}_{mag_label}"
+            label = format_magmom_label(mag_value, index=idx)
             child = getattr(self.ctx, label, None)
 
             if child is None:
@@ -199,18 +197,3 @@ def parse_and_gather_magmom_results(child_pks):
         "status": status,
     }
     return orm.Dict(result)
-
-
-def _mag_to_label(mag_value):
-    """Render a ``mag`` configuration as a filesystem-friendly label.
-
-    Accepts either a flat list ``[1.0, -1.0]`` or a nested list where each
-    entry is the per-atom magnetization vector ``[[1.0], [-1.0]]``.
-    """
-    parts = []
-    for x in mag_value:
-        if isinstance(x, (list, tuple)):
-            parts.append("_".join(f"{float(v):g}" for v in x))
-        else:
-            parts.append(f"{float(x):g}")
-    return "_".join(parts).replace(".", "_").replace("-", "m")

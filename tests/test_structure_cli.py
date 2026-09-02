@@ -191,7 +191,10 @@ class TestBuildStructureValidation:
         with pytest.raises(ValueError, match="'elements'"):
             build_structure("bad", registry=registry)
 
-    def test_x_must_be_one_or_one_plus_triplets(self, tmp_path: Path) -> None:
+    def test_x_must_contain_lattice_param(self, tmp_path: Path) -> None:
+        """``x`` must be a non-empty list — it carries the lattice
+        parameter(s) (plus optional free Wyckoff coordinates).
+        """
         from aiida_uranium_workflow.utils.structure import build_structure
 
         registry = {
@@ -199,8 +202,29 @@ class TestBuildStructureValidation:
                 "spacegroup": 225,
                 "elements": ["U", "O"],
                 "wickoff_position": ["a", "b"],
-                "x": [4.84, 0.1, 0.2],  # not a multiple-of-3 tail
+                "x": [],
             }
         }
-        with pytest.raises(ValueError, match="'x' must be either"):
+        with pytest.raises(ValueError, match="'x' must be a non-empty list"):
             build_structure("bad", registry=registry)
+
+    def test_x_lattice_param_only_is_valid(self, tmp_path: Path) -> None:
+        """``x = [a]`` (single cubic lattice parameter) is valid when the
+        Wyckoff positions are fixed — no free coordinates needed.
+        Matches the real ``structure.yml`` entries (e.g. ``U-XO``).
+        """
+        from aiida_uranium_workflow.utils.structure import build_structure
+
+        registry = {
+            "ok": {
+                "spacegroup": 225,
+                "elements": ["U", "O"],
+                "wickoff_position": ["a", "b"],
+                "x": [4.8408],
+            }
+        }
+        atoms = build_structure("ok", registry=registry)
+        # SG 225 a/b positions each have multiplicity 4.
+        assert len(atoms) == 8
+        assert "U" in atoms.get_chemical_symbols()
+        assert "O" in atoms.get_chemical_symbols()

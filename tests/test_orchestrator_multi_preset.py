@@ -31,7 +31,9 @@ class _RecordingAdapter:
 
     instances: List[Tuple[str, int]] = []
 
-    def __init__(self, code_label, software_params, metadata, workflow_data) -> None:
+    def __init__(
+        self, code_label, software_params, metadata, workflow_data, *, extra_codes=None
+    ) -> None:
         # ``software_params`` is a single preset dict; remember which
         # ``backend`` and which ``preset_index`` this adapter instance
         # corresponds to by reading a marker injected by the orchestrator.
@@ -39,6 +41,7 @@ class _RecordingAdapter:
         self.software_params = software_params
         self.metadata = metadata
         self.workflow_data = workflow_data
+        self.extra_codes = dict(extra_codes or {})
         _RecordingAdapter.instances.append(
             (software_params.get("__backend__"), software_params.get("__idx__"))
         )

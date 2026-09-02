@@ -23,3 +23,13 @@ test_simple:
     - 0.1
     - 0.08
     - 0.06
+
+gauss:
+  # TODO: you should devide it into abacus and vasp's smear workchain format.
+  smear_list:
+    - gauss
+  sigma_list: # the unit is eV
+    - 0.08
+    - 0.06
+    - 0.04
+    - 0.02

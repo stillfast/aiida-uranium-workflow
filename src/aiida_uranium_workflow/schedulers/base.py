@@ -194,36 +194,49 @@ class WorkflowOrchestrator:
         structure_names = self._structure_names()
         n_structures = len(structures)
         submitted: List[SubmittedJob] = []
+        # ``workflow_presets`` lets ``parameters[<workflow_key>]`` be a
+        # list of protocol preset names — one WorkChain per preset, each
+        # with its own ``workflow_data``. Empty ⇒ single-preset behaviour.
+        wf_presets = self.bundle.workflow_presets or [None]
         for backend, builder_cls, preset_idx, preset_name in self._select_backends():
             n_presets = len(self.bundle.software_params.get(backend, []))
-            for structure_idx, (structure, structure_name) in enumerate(
-                zip(structures, structure_names)
-            ):
-                node = self._submit_one(
-                    backend, builder_cls, structure, preset_idx
-                )
-                pk = node.pk
-                # ``uuid`` is the canonical identifier of the WorkChain
-                # for downstream consumers (``output.json`` writes it
-                # instead of the local pk); ``load_node(uuid)`` round-trips.
-                uuid = str(getattr(node, "uuid", "")) if node is not None else ""
-                job = SubmittedJob(
-                    backend=backend,
-                    preset_name=preset_name,
-                    pk=pk,
-                    structure_name=structure_name,
-                    uuid=uuid,
-                )
-                submitted.append(job)
-                self._submitted_jobs.append(job)
-                label = self._label(
-                    backend, preset_idx, n_presets,
-                    structure_idx, n_structures,
-                    preset_name=preset_name,
-                )
-                print(
-                    f"[{self.bundle.input_params['workflow']}] {label} submitted, pk={pk} uuid={uuid}"
-                )
+            for wf_preset in wf_presets:
+                for structure_idx, (structure, structure_name) in enumerate(
+                    zip(structures, structure_names)
+                ):
+                    node = self._submit_one(
+                        backend, builder_cls, structure, preset_idx,
+                        workflow_preset=wf_preset,
+                    )
+                    pk = node.pk
+                    # ``uuid`` is the canonical identifier of the WorkChain
+                    # for downstream consumers (``output.json`` writes it
+                    # instead of the local pk); ``load_node(uuid)`` round-trips.
+                    uuid = str(getattr(node, "uuid", "")) if node is not None else ""
+                    # Combine the SCF preset and the protocol preset into a
+                    # unique output.json key when both vary (e.g.
+                    # "lcao/vacancy_scf").
+                    final_name = (
+                        f"{preset_name}/{wf_preset}" if wf_preset else preset_name
+                    )
+                    job = SubmittedJob(
+                        backend=backend,
+                        preset_name=final_name,
+                        pk=pk,
+                        structure_name=structure_name,
+                        uuid=uuid,
+                    )
+                    submitted.append(job)
+                    self._submitted_jobs.append(job)
+                    label = self._label(
+                        backend, preset_idx, n_presets,
+                        structure_idx, n_structures,
+                        preset_name=final_name,
+                    )
+                    print(
+                        f"[{self.bundle.input_params['workflow']}] {label} submitted, "
+                        f"pk={pk} uuid={uuid}"
+                    )
         return submitted
 
     # ---- internals (shared by all workflows) ----------------------------
@@ -359,7 +372,12 @@ class WorkflowOrchestrator:
         return chosen
 
     def _submit_one(
-        self, backend: str, cls: Type, structure, preset_idx: int = 0
+        self,
+        backend: str,
+        cls: Type,
+        structure,
+        preset_idx: int = 0,
+        workflow_preset: str | None = None,
     ):
         """Submit one WorkChain and return its process node.
 
@@ -367,15 +385,24 @@ class WorkflowOrchestrator:
         caller capture both the integer pk (for log readability) and
         the top-level uuid (the canonical identifier written into
         ``output.json``).
+
+        ``workflow_preset`` selects the per-preset ``workflow_data`` when
+        ``parameters[<workflow_key>]`` was given as a list (one WorkChain
+        per protocol preset); ``None`` uses the default single preset.
         """
         from aiida.engine import submit
 
         preset = self.bundle.software_params[backend][preset_idx]
+        workflow_data = (
+            self.bundle.workflow_data_map.get(workflow_preset, self.bundle.workflow_data)
+            if workflow_preset
+            else self.bundle.workflow_data
+        )
         builder = cls(
             code_label=self.bundle.input_params["code"][backend],
             software_params=preset,
             metadata=self.bundle.metadata,
-            workflow_data=self.bundle.workflow_data,
+            workflow_data=workflow_data,
             # Pass the full ``input.json["code"]`` mapping so adapters
             # that need sibling codes (e.g. FLEUR's ``inpgen`` inside
             # the SCF namespace) can pull them from

@@ -1,0 +1,46 @@
+# EOS workflow protocol — equation-of-state volume scan per backend.
+#
+# Computes the equilibrium (ground-state) volume / lattice constant of a
+# structure by running fixed-lattice SCFs at several cell volumes and
+# fitting the energy-volume curve (Birch-Murnaghan by default).
+#
+# The per-backend SCF base lives in ``parameters/<backend>/scf.yml``
+# (shared with banddos / elastic / relax / phonopy); the workflow's
+# ``input.json`` selects both sides::
+#
+#     {
+#       "workflow": "eos",
+#       "parameters": {
+#         "abacus": {"scf": ["lcao_r"]},   # ABACUS SCF preset (scf.yml)
+#         "fleur":  {"scf": ["nosoc"]},    # FLEUR SCF preset (scf.yml)
+#         "eos":    "test"                 # this protocol preset
+#       },
+#       "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+#       "profile": "aiida_profile",
+#       "code": {"abacus": "abacus@yunhe", "fleur": "fleur@yunhe",
+#                "inpgen": "inpgen@yunhe"}
+#     }
+
+test:
+  # Volume-scan settings (same semantics as the aiida-fleur
+  # ``FleurEosWorkChain`` ``wf_parameters``):
+  #   points — number of scaled cells (odd, symmetric around ``guess``)
+  #   step   — spacing between consecutive volume-scale factors
+  #   guess  — central scale factor (1.00 = the input cell)
+  # Scale factors: guess - (points-1)/2*step ... guess + (points-1)/2*step
+  #
+  # Range 0.95–1.05: the PBE+SOC equilibrium of bcc-U sits at
+  # scale ≈ 0.97, so the old 0.98–1.02 window never contained the
+  # minimum (the fit extrapolated V0 below the scan range).
+  abacus:
+    points: 11
+    step: 0.01
+    guess: 1.00
+    # EOS-specific SCF overrides, applied on top of the selected
+    scf_thr: 1e-7
+    scf_nmax: 50
+    smearing_sigma: 0.0073529411764706
+  fleur:
+    points: 11
+    step: 0.01
+    guess: 1.00

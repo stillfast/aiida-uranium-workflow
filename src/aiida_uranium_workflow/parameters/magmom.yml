@@ -5,3 +5,79 @@ test:
   vasp:
     magmom_mapping_list:
       - {"U": 4.0}
+  fleur:
+    # FLEUR magmom protocol — SOLE control point for the magmom sweep:
+    # the SCF namespace (l_noco / l_soc / cutoffs / k-mesh) lives in the
+    # per-preset files under parameters/fleur/magmom.yml (same format as
+    # banddos presets); the initial magnetic configurations are ONLY
+    # listed here (no preset-level fallback — a missing list raises an
+    # error in FleurMagmomAdapter). Each entry may carry 'bmu' and extra
+    # 'inpxml_changes' (FM / AFM spin-quantisation-axis seeds) on top of
+    # the preset's base.
+    magmom_list:
+      - {label: NM, bmu: 0.0}
+      - {label: FM, bmu: 4.0, inpxml_changes: [["set_species", {species_name: "all", changes: {nocoParams: {l_magn: "T", alpha: 0.0, beta: 0.0}}, create: true}]]}
+      - {label: AFM, bmu: 4.0, inpxml_changes: [["set_species", {species_name: "all", changes: {nocoParams: {l_magn: "T", alpha: 0.0, beta: 0.0}}, create: true}], ["set_atomgroup", {position: 2, changes: {nocoParams: {alpha: 0.0, beta: "Pi"}}}]]}
+
+test_mag:
+  # Non-SOC (collinear) sweep: VASP magmom_per_atom_list uses one
+  # scalar per site (ISPIN=2, LNONCOLLINEAR=F); ABACUS mag_list uses the
+  # per-atom stru.mag form.
+  abacus:
+    mag_list: 
+      - [[0.0],[0.0]]
+      - [[4.0],[4.0]]
+      - [[4.0],[-4.0]]
+  vasp:
+    magmom_per_atom_list:
+      - [0.0,0.0]
+      - [4.0,4.0]
+      - [4.0,-4.0]
+  fleur:
+    magmom_list:
+      - {label: NM, bmu: 0.0}
+      - {label: FM, bmu: 4.0, inpxml_changes: [["set_species", {species_name: "all", changes: {nocoParams: {l_magn: "T", alpha: 0.0, beta: 0.0}}, create: true}]]}
+      - {label: AFM, bmu: 4.0, inpxml_changes: [["set_species", {species_name: "all", changes: {nocoParams: {l_magn: "T", alpha: 0.0, beta: 0.0}}, create: true}], ["set_atomgroup", {position: 2, changes: {nocoParams: {alpha: 0.0, beta: "Pi"}}}]]}
+  qe:
+    magmom_list:
+      - {"U": 0.0}                  # NM
+      - {"U": 2.0}                  # FM
+      - {"U1": 2.0, "U2": -2.0}     # AFM
+
+
+test_mag_soc:
+  abacus:
+    mag_list: 
+      - [[0.0],[0.0]]
+      - [[4.0],[4.0]]
+      - [[4.0],[-4.0]]
+  vasp:
+    magmom_per_atom_list:
+      - [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+      - [[0.0, 0.0, 4.0], [0.0, 0.0, 4.0]]
+      - [[0.0, 0.0, 4.0], [0.0, 0.0, -4.0]]
+# QE (pw.x) magmom sweep for gamma-U under the SSSP/1.3/PBE/efficiency
+# pseudopotentials (SCF base in parameters/qe/magmom.yml).
+# gamma-U (spacegroup 129, a=4.995 c=3.532) is weakly magnetic; scan
+# non-magnetic / ferromagnetic seeds.
+test_u_qe:
+  qe:
+    magmom_list:
+      - {"U": 0.0}
+      - {"U": 1.0}
+      - {"U": 2.0}
+      - {"U": 3.0}
+      - {"U": 4.0}
+
+# QE gamma-U magnetic-order sweep under SSSP/1.3/PBE/efficiency.
+# NM / FM use element-level keys (all U sites share the moment); the
+# AFM seed uses split species U1/U2 — the adapter relabels the 4-atom
+# gamma-U cell alternately (site i → U1/U2) and maps both to the U
+# pseudopotential, so QE can set opposite starting_magnetization per
+# species.
+test_u_afm_qe:
+  qe:
+    magmom_list:
+      - {"U": 0.0}                  # NM
+      - {"U": 2.0}                  # FM
+      - {"U1": 2.0, "U2": -2.0}     # AFM

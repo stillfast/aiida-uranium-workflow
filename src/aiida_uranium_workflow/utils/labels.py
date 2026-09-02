@@ -412,14 +412,29 @@ def _extract_stru_mag(inputs: Any) -> Any:
 
 
 def _extract_vasp_magmom(inputs: Any) -> Any:
-    """Return the VASP ``magmom_mapping`` input if available."""
+    """Return the VASP initial magnetic-moment input if available.
+
+    Two port styles are supported:
+
+    * ``magmom_mapping`` — per-species dict (``{"U": 4.0}`` /
+      ``{"U": [1.0, -1.0]}``), the older ``magmom_list`` form.
+    * ``magmom_per_atom`` — per-site list (``[4.0, -4.0]`` /
+      ``[[0.0, 0.0, 4.0], [0.0, 0.0, -4.0]]``), the per-atom form used
+      by the newer ``magmom_per_atom_list`` sweep.
+    """
     if inputs is None:
         return None
     candidate = _safe_get_input(inputs, "magmom_mapping")
+    if candidate is not None:
+        data = _safe_get_dict(candidate)
+        return data if data else candidate
+    candidate = _safe_get_input(inputs, "magmom_per_atom")
     if candidate is None:
         return None
-    data = _safe_get_dict(candidate)
-    return data if data else candidate
+    try:
+        return list(candidate.get_list())
+    except (AttributeError, TypeError):
+        return None
 
 
 def _get_inputs_safely(node: Any) -> Any:

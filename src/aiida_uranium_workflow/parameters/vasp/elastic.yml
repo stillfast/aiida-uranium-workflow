@@ -1,0 +1,33 @@
+# VASP elastic-workflow presets — self-contained INCAR per preset
+# (like ``parameters/vasp/magmom.yml``; the elastic strain lists live in
+# the workflow protocol ``parameters/elastic.yml`` under the ``vasp``
+# block). These are single-point / position-relax settings: the
+# workflow itself injects the ISIF / IBRION / NSW of the chosen relax
+# mode (ISIF=2 + IBRION=2 + NSW=50 for ``relax_internal: true``,
+# ISIF=4 + IBRION=-1 for clamped-ion), and VASP's stress output
+# (OUTCAR "total stress", vasprun ``<varray name="stress">``, kB) is
+# parsed into the child's ``misc`` output regardless.
+
+test_u:
+  parameters:
+    incar:
+      system: bcc-uranium
+      ispin: 2
+      prec: Accurate
+      lmaxmix: 6
+      lasph: true
+      lreal: false
+      lcharg: false
+      lwave: false
+
+      encut: 400
+      ismear: 1
+      sigma: 0.1
+      ediff: 1e-6
+      ediffg: -0.02
+      nelm: 100
+
+  potential_family: "PBE"
+  potential_mapping:
+    U: "U"
+  kpoints_mesh: [7, 7, 7]

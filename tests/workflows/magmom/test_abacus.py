@@ -234,23 +234,16 @@ def test_gather_results_no_children(aiida_profile_clean, generate_workchain_abac
 
 def test_parse_and_gather_magmom_results(aiida_profile_clean):
     """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs."""
-    status_dict = orm.Dict({})
     child_pks = orm.List([])
-    magmom_list = orm.List([])
 
-    result = parse_and_gather_magmom_results(
-        status_dict=status_dict,
-        child_pks=child_pks,
-        magmom_list=magmom_list,
-    )
+    result = parse_and_gather_magmom_results(child_pks=child_pks)
 
     assert isinstance(result, orm.Dict)
     result_dict = result.get_dict()
     assert "magnetism" in result_dict
     assert "final_magnetism" in result_dict
+    assert result_dict["magnetism"] == {}
     assert "nspin" in result_dict
-    assert "magmom_list" in result_dict
     assert result_dict["magnetism"] == {}
     assert result_dict["final_magnetism"] == {}
     assert result_dict["nspin"] == {}
-    assert result_dict["magmom_list"] == []

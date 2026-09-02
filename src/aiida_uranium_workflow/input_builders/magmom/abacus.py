@@ -17,7 +17,7 @@ class AbacusMagmomAdapter(SoftwareAdapter):
     name = "abacus"
 
     def _workchain_entry_point(self) -> str:
-        return "abacus.magmom"
+        return "uranium.magmom.abacus"
 
     def _build_workchain_inputs(self, structure) -> dict[str, Any]:
         from aiida import orm

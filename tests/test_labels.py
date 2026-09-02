@@ -173,6 +173,13 @@ class TestFormatMagmomLabel:
         assert format_magmom_label(1.0) == "magmom_1"
         assert format_magmom_label(-0.5) == "magmom_m0_5"
 
+    def test_per_atom_3vector(self):
+        # VASP SOC per-site 3-vectors: [mx my mz] per atom.
+        assert (
+            format_magmom_label([[0.0, 0.0, 4.0], [0.0, 0.0, -4.0]])
+            == "magmom_0_0_4_0_0_m4"
+        )
+
     def test_index_prefix(self):
         assert format_magmom_label([1.0, -1.0], index=0) == "magmom_000_1_m1"
         assert format_magmom_label({"U": 1.0}, index=5) == "magmom_005_U_1"

@@ -1,0 +1,92 @@
+# Relax workflow protocol — per-backend layout (same as magmom.yml /
+# banddos.yml). Each preset carries ONLY the relaxation settings:
+#
+#   abacus:  relax_type=volume + force/stress cutoffs + meta-convergence
+#   fleur:   full relaxation (positions + cell) — the plugin has no
+#            volume-only mode
+#
+# The per-backend SCF base lives in the preset files under
+# ``parameters/abacus/scf.yml`` and ``parameters/fleur/scf.yml``.
+#
+# NOTE on convergence criteria:
+#   * The two backends intentionally keep different relax TYPES —
+#     ABACUS relaxes only the cell VOLUME (full relax is hard to
+#     converge for the SOC cases), FLEUR runs a FULL relaxation.
+#   * The FORCE criteria are unified to the same physical value:
+#     abacus.force_cutoff 0.03 eV/Å  ↔  fleur.force_criterion
+#     0.0006 Ha/bohr (1 Ha/bohr = 51.42 eV/Å). FLEUR has no stress
+#     criterion for atoms-only relaxation, so stress is ABACUS-only
+#     (stress_cutoff in kBar).
+#
+#   input.json:
+#     "parameters": {
+#         "abacus": {"scf": ["test"]},   # SCF base only
+#         "fleur":  {"scf": "U-NM-nosoc"},
+#         "relax":  "test"               # this protocol preset (relax only)
+#     }
+
+test:
+  abacus:
+    # plugin abacus.relax → RelaxOptions: only the cell VOLUME is
+    # relaxed (cell shape + atomic positions fixed).
+    relax_type: volume
+    relax_method: cg
+    max_ionic_steps: 50
+    force_cutoff: 0.05       # eV/Å (force_thr_ev)
+    stress_cutoff: 1.0       # kBar (stress_thr)
+    # Meta-convergence on the cell volume between relax iterations.
+    meta_convergence: true
+    volume_convergence: 0.01
+    max_meta_convergence_iterations: 5
+  fleur:
+    # plugin fleur.relax: the plugin has no "volume-only" mode
+    # (relaxation_type supports 'atoms' / None), so this runs a FULL
+    # relaxation (atomic positions + cell).
+    relaxation_type: atoms        # 'atoms' = full relax (positions + cell)
+    # converged largest force, Ha/bohr (atomic units). Matches
+    # abacus.force_cutoff 0.03 eV/Å: 1 Ha/bohr = 51.42 eV/Å,
+    # so 0.0006 Ha/bohr ≈ 0.0309 eV/Å (was 0.001 ≈ 0.051 eV/Å).
+    force_criterion: 0.00097   # converged largest force (atomic units)
+    relax_iter: 5            # max relaxation steps
+    run_final_scf: false     # run a final SCF on the relaxed structure?
+    change_mixing_criterion: 0.025
+
+test_soc:
+  abacus:
+    relax_type: volume
+    relax_method: cg
+    max_ionic_steps: 50
+    force_cutoff: 0.05
+    stress_cutoff: 1.0
+    meta_convergence: true
+    volume_convergence: 0.01
+    max_meta_convergence_iterations: 5
+  fleur:
+    relaxation_type: atoms
+    # converged largest force, Ha/bohr (atomic units). Matches
+    # abacus.force_cutoff 0.03 eV/Å: 1 Ha/bohr = 51.42 eV/Å,
+    # so 0.0006 Ha/bohr ≈ 0.0309 eV/Å (was 0.001 ≈ 0.051 eV/Å).
+    force_criterion: 0.00097
+    relax_iter: 5
+    run_final_scf: false
+    change_mixing_criterion: 0.025
+
+test_si:
+  abacus:
+    relax_type: volume
+    relax_method: cg
+    max_ionic_steps: 50
+    force_cutoff: 0.03
+    stress_cutoff: 1.0
+    meta_convergence: true
+    volume_convergence: 0.01
+    max_meta_convergence_iterations: 5
+  fleur:
+    relaxation_type: atoms
+    # converged largest force, Ha/bohr (atomic units). Matches
+    # abacus.force_cutoff 0.03 eV/Å: 1 Ha/bohr = 51.42 eV/Å,
+    # so 0.0006 Ha/bohr ≈ 0.0309 eV/Å (was 0.001 ≈ 0.051 eV/Å).
+    force_criterion: 0.0006
+    relax_iter: 10
+    run_final_scf: false
+    change_mixing_criterion: 0.025

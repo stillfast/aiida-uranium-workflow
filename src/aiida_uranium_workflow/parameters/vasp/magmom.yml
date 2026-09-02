@@ -26,7 +26,7 @@ soc:
   parameters:
     incar:
       system: bcc-uranium
-      ispin: 2
+      ispin: 4
       prec: Accurate
       lmaxmix: 6
       lasph: true

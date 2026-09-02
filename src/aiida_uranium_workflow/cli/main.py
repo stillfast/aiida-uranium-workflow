@@ -3,7 +3,7 @@
 
 Command form::
 
-    aiida-uranium {run,report,archive,copy} --method {smear,convergence,magmom}
+    aiida-uranium {run,report,archive,copy} --method {smear,convergence,magmom,banddos}
 
 Subcommands:
 
@@ -13,7 +13,9 @@ Subcommands:
                  readers).
 * ``report``  — read an ``output.json`` produced by ``run`` and emit a
                  Markdown report per WorkChain (filename uses a short
-                 8-character identifier).
+                 8-character identifier). The ``banddos`` method
+                 currently reuses the base "unsupported" stub; bring up
+                 a band-report generator alongside the WorkChain.
 * ``archive`` — read an ``output.json``, validate that every identifier
                  is a WorkChain of the selected method, and export
                  them into a single ``.aiida`` archive.

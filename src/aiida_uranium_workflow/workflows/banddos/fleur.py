@@ -14,8 +14,8 @@ Layout::
     ├── dos_inputs        (Dict) — DOS-mode ``wf_parameters`` overrides
     ├── structure, codes, options ... (mirrors ``test_fleur_band.py``)
     outputs
-    ├── band_structure    (XyData)  — band k-points + energies
-    ├── dos               (XyData)  — DOS arrays
+    ├── band_structure    (BandsData) — band k-points + energies
+    ├── dos               (XyData)   — DOS arrays
     └── output_parameters (Dict)    — {fermi_level_band, fermi_level_dos,
                                        bandgap_band, bandgap_dos, mode, …}
 
@@ -31,6 +31,11 @@ Usage example (mirrors ``test_fleur_band.py``'s ``submit_banddos``)::
                 dos_wf=Dict(dict={'kpath': 'auto',
                                   'kpoints_distance': 0.1,
                                   'energy_range': {...}}))
+
+    Both children are submitted with ``use_primitive_cell=True`` (FLEUR
+    runs SCF / band / DOS on the seekpath primitive cell, matching the
+    ABACUS band WorkChain's convention, so the band k-points of the two
+    codes correspond).
 """
 
 from __future__ import annotations
@@ -151,9 +156,9 @@ class FleurBandAndDosWorkChain(WorkChain):
         # ---- Outputs ---------------------------------------------------------
         spec.output(
             "band_structure",
-            valid_type=orm.XyData,
+            valid_type=orm.BandsData,
             required=True,
-            help="Bands XyData from the band-mode child.",
+            help="Bands BandsData from the band-mode child.",
         )
         spec.output(
             "dos",
@@ -196,11 +201,28 @@ class FleurBandAndDosWorkChain(WorkChain):
         ``wf_parameters`` already carries ``mode`` / ``kpath`` /
         ``proj`` / ``energy_range``; we only make sure ``mode`` matches
         the requested branch.
+
+        Both children run with ``use_primitive_cell=True``: FLEUR then
+        runs the SCF / band / DOS on the seekpath primitive cell — the
+        same convention ABACUS's band WorkChain enforces — so the two
+        codes' band k-points correspond. Requires aiida-fleur with the
+        ``use_primitive_cell`` wf_parameter support.
         """
         wf = dict(wf_parameters)
         wf["mode"] = mode
         # ``kpath`` defaults mirror test_fleur_band.py
         wf.setdefault("kpath", "seek" if mode == "band" else "auto")
+        # Run on the seekpath primitive cell so the FLEUR band k-points
+        # match ABACUS (which always primitivises via seekpath).
+        wf["use_primitive_cell"] = True
+        # NOTE: do NOT switch the DOS to bzIntegration mode='tria' here —
+        # FLEUR's tetrahedron method needs a *tria-bulk* k-point set
+        # ("'tria' tetrahedron decomposition for bulk systems needs a
+        # tria-bulk k-point set"), which the SCF 11x11x11 mesh is not.
+        # The DOS therefore uses the same (gauss) smearing as the SCF /
+        # band; smoothness is controlled via the ``sigma`` wf_parameter.
+        # (To really use tria, regenerate the k-point set with
+        # calc_parameters.kpt.tria=true so inpgen emits a tria-bulk mesh.)
 
         # Copy the SCF namespace into a plain dict so we can extend
         # it with ``fleur`` / ``inpgen`` / ``options_inpgen`` /
@@ -279,30 +301,50 @@ class FleurBandAndDosWorkChain(WorkChain):
 
         self.out(
             "output_parameters",
-            _combine_outputs(band_run=band_run, dos_run=dos_run),
+            _combine_outputs(
+                band_para_node=band_run.outputs.output_banddos_wc_para,
+                dos_para_node=dos_run.outputs.output_banddos_wc_para,
+                band_run_pk=band_run.pk,
+                dos_run_pk=dos_run.pk,
+                band_run_uuid=str(band_run.uuid),
+                dos_run_uuid=str(dos_run.uuid),
+            ),
         )
         return None  # SUCCESS
 
 
 # ---------------------------------------------------------------------------
 # calcfunction: merge the two ``output_banddos_wc_para`` dicts and convert
-# Hartree → eV for the Fermi levels.
+# Hartree → eV for the Fermi levels. Inputs are the two output Dict nodes
+# plus plain provenance values — a calcfunction cannot accept WorkChainNode
+# inputs (``TypeError: Cannot convert value of type WorkChainNode``).
 # ---------------------------------------------------------------------------
 
 
 @calcfunction
-def _combine_outputs(band_run, dos_run):
-    """Return a Dict combining both runs' summary dicts + metadata."""
-    from aiida.orm import load_node
+def _combine_outputs(
+    band_para_node, dos_para_node, band_run_pk, dos_run_pk, band_run_uuid, dos_run_uuid
+):
+    """Return a Dict combining both runs' summary dicts + metadata.
 
-    band_para = band_run.outputs.output_banddos_wc_para.get_dict()
-    dos_para = dos_run.outputs.output_banddos_wc_dos  # kept for symmetry
-
-    dos_para_dict = dos_run.outputs.output_banddos_wc_para.get_dict()
+    :param band_para_node: the ``output_banddos_wc_para`` Dict of the band run
+    :param dos_para_node:  the ``output_banddos_wc_para`` Dict of the DOS run
+    :param band_run_pk / dos_run_pk / band_run_uuid / dos_run_uuid:
+        plain provenance identifiers of the two child WorkChains (they are
+        passed as plain values because a calcfunction cannot take
+        ``WorkChainNode`` inputs).
+    """
+    band_para = band_para_node.get_dict()
+    dos_para_dict = dos_para_node.get_dict()
 
     def _fermi_ev(para: dict) -> float | None:
-        """Pull ``fermi_energy_band`` (Hartree) → eV; ``None`` if missing."""
-        for key in ("fermi_energy_band", "fermi_energy_scf"):
+        """Pull the Fermi energy (Hartree) → eV; ``None`` if missing.
+
+        Prefer the **SCF** Fermi energy: per fleur.md §4.3 the E_F from a
+        band/DOS path run can be unreliable, the SCF value is the
+        reference of choice.
+        """
+        for key in ("fermi_energy_scf", "fermi_energy_band"):
             if key not in para:
                 continue
             units = str(para.get("fermi_energy_units", "Htr")).strip().lower()
@@ -333,10 +375,11 @@ def _combine_outputs(band_run, dos_run):
             (band_para.get("bandgap_band") or 0.0)
             - (dos_para_dict.get("bandgap_band") or 0.0)
         ),
-        # Provenance: pks / uuids of the two child workchains.
-        "band_run_pk": band_run.pk,
-        "band_run_uuid": band_run.uuid,
-        "dos_run_pk": dos_run.pk,
-        "dos_run_uuid": dos_run.uuid,
+        # Provenance: pks / uuids of the two child workchains (passed
+        # in as plain values, see the function docstring).
+        "band_run_pk": band_run_pk,
+        "band_run_uuid": band_run_uuid,
+        "dos_run_pk": dos_run_pk,
+        "dos_run_uuid": dos_run_uuid,
     }
     return orm.Dict(combined)

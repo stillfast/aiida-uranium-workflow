@@ -70,18 +70,16 @@ def test_child_inputs_metadata_label_structure():
 
 def test_parse_and_gather_convergence_results(aiida_profile_clean):
     """Test the `parse_and_gather_convergence_results` calcfunction with empty inputs."""
-    status_dict = orm.Dict({})
     child_pks = orm.List([])
 
-    result = parse_and_gather_convergence_results(
-        status_dict=status_dict, child_pks=child_pks
-    )
+    result = parse_and_gather_convergence_results(child_pks=child_pks)
 
     assert isinstance(result, orm.Dict)
     result_dict = result.get_dict()
     assert "total_energy" in result_dict
     assert "num_atoms" in result_dict
     assert "total_energy_per_atom" in result_dict
+    assert result_dict["total_energy"] == {}
 
 
 def test_workchain_exit_codes():

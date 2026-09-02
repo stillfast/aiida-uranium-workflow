@@ -12,7 +12,7 @@ class AbacusConvergenceAdapter(SoftwareAdapter):
     name = "abacus"
 
     def _workchain_entry_point(self) -> str:
-        return "abacus.convergence"
+        return "uranium.convergence.abacus"
 
     def _build_workchain_inputs(self, structure, include_distance: bool = True) -> dict[str, Any]:
         from aiida import orm

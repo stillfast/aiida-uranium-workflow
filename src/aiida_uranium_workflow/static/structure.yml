@@ -10,6 +10,18 @@ bcc-uranium-0K: # uranium structure of T = 0K
   wickoff_position: ["a"]
   x: [3.45063]
 
+bcc-uranium-abacus: 
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.445]
+
+bcc-uranium-fleur:
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.439]
+
 gamma-uranium: 
   spacegroup: 129
   elements: ["U", "U"]

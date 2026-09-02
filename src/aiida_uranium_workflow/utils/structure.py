@@ -75,12 +75,6 @@ def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
     # coordinates, one per Wyckoff site. The number of lattice
     # parameters is therefore ``len(x) - len(wps)``.
     n_lattice = len(x) - len(wps)
-    if n_lattice < 1:
-        raise ValueError(
-            f"Structure '{atom_name}': 'x' has {len(x)} value(s) but there "
-            f"are {len(wps)} Wyckoff site(s); at least one lattice "
-            f"parameter is required."
-        )
     a = [float(v) for v in x]
 
     cry = pyxtal()

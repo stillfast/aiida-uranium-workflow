@@ -1,0 +1,37 @@
+# QE (pw.x) SCF preset for the magmom workflow — per-backend layout.
+#
+# Loaded under ``parameters/qe/magmom.yml``; the initial magnetic
+# configurations (per-species starting_magnetization sweeps) live in
+# the ``qe`` block of ``parameters/magmom.yml``.
+#
+# Reference: ~/scripts/aiida/aiida-config/yeesuan/test_qe.py
+#   * smearing 'mp', degauss 0.00735 Ry (0.1 eV)
+#   * k-points 11×11×11 mesh
+#   * ecutwfc / ecutrho taken from the SSSP family's recommended cutoffs
+#     (adapter calls ``get_recommended_cutoffs(structure, unit='Ry')``,
+#     overriding the reference values below; e.g. U ≈ 60 / 480 Ry for
+#     SSSP/1.3/PBE/efficiency).
+#
+#   input.json:
+#     "parameters": {
+#         "qe":     {"magmom": ["test_u"]},   # this preset (SCF base)
+#         "magmom": "test_u_qe"               # magmom sweep (magmom.yml)
+#     }
+
+test_u:
+  pw:
+    parameters:
+      CONTROL:
+        calculation: scf
+      SYSTEM:
+        ecutwfc: 60        # Ry — SSSP U reference (overridden by family)
+        ecutrho: 480
+        degauss: 0.00735   # Ry = 0.1 eV — metallic smearing (mp)
+        occupations: smearing
+        smearing: mp
+        nspin: 2           # collinear; starting_magnetization injected per sweep entry
+      ELECTRONS:
+        conv_thr: 1.0e-8
+        mixing_beta: 0.4
+  kpoints_mesh: [11, 11, 11]
+  pseudo_family: SSSP/1.3/PBE/efficiency

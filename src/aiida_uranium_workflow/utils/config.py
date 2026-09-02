@@ -34,7 +34,7 @@ class ConfigLoader:
     #: ``input.json`` (e.g. ``"smear"``, ``"magmom"``, ``"convergence"``)
     #: is treated as a workflow-protocol slot and handled by
     #: :meth:`_load_protocol` instead.
-    BACKEND_DIRS = ("abacus", "vasp")
+    BACKEND_DIRS = ("abacus", "vasp", "fleur", "qe")
 
     def __init__(self, input_json_path: str | Path) -> None:
         self.input_json_path = input_json_path
@@ -53,11 +53,48 @@ class ConfigLoader:
         protocol = self._load_protocol(entry)
         workflow_data = self._parse_protocol(protocol, entry)
 
+        # Multi-preset protocol (``parameters[<workflow_key>]`` as a list):
+        # one WorkChain is submitted per requested preset, each with its own
+        # parsed workflow_data. Single-name inputs leave these empty and the
+        # orchestrator behaves exactly as before.
+        raw_wf = self.input_params["parameters"].get(entry.workflow_key)
+        if isinstance(raw_wf, (list, tuple)):
+            preset_entries = self._load_protocol_entries(entry)
+            if not preset_entries:
+                raise KeyError(
+                    f"None of the requested protocol presets {list(raw_wf)!r} "
+                    f"exist in parameters/{entry.protocol_file}; check the "
+                    f"'parameters' section of {self.input_json_path}."
+                )
+            workflow_presets = [name for name, _ in preset_entries]
+            workflow_data_map = {
+                name: self._parse_protocol(raw, entry)
+                for name, raw in preset_entries
+            }
+        else:
+            workflow_presets = []
+            workflow_data_map = {}
+
         # Load backend-specific parameters
         software_params = self._load_all_software_params()
 
         # Load metadata
         metadata = self._load_metadata()
+
+        # An empty protocol section is legitimate when the workflow's
+        # per-backend presets carry everything (e.g. FLEUR's banddos /
+        # magmom presets under ``parameters/<backend>/``). But when
+        # BOTH the protocol name is missing AND no backend preset was
+        # requested, the input.json is effectively empty — surface a
+        # descriptive error instead of silently submitting nothing.
+        if not protocol and not software_params:
+            name = self.input_params["parameters"].get(entry.workflow_key)
+            raise KeyError(
+                f"Protocol '{name}' not found for workflow "
+                f"'{self.input_params['workflow']}' and no backend preset "
+                f"was requested; check parameters/ and the 'parameters' "
+                f"section of {self.input_json_path}."
+            )
 
         return ParamBundle(
             input_params=self.input_params,
@@ -65,6 +102,8 @@ class ConfigLoader:
             workflow_data=workflow_data,
             software_params=software_params,
             metadata=metadata,
+            workflow_presets=workflow_presets,
+            workflow_data_map=workflow_data_map,
         )
 
     def _validate(self) -> None:
@@ -101,6 +140,25 @@ class ConfigLoader:
             f"got type {type(struct).__name__}"
         )
 
+    def _protocol_names(self, entry) -> list[str]:
+        """Resolve ``parameters[<workflow_key>]`` to a list of preset names.
+
+        Accepts a single preset name (``"defects": "test"``) or a list of
+        preset names (``"defects": ["vacancy_scf", "vacancy_relax"]`` —
+        one WorkChain is submitted per preset).
+        """
+        if entry.workflow_key not in self.input_params["parameters"]:
+            return []
+        raw = self.input_params["parameters"][entry.workflow_key]
+        if isinstance(raw, str):
+            return [raw]
+        if isinstance(raw, (list, tuple)) and all(isinstance(n, str) for n in raw):
+            return list(raw)
+        raise TypeError(
+            f"parameters['{entry.workflow_key}'] must be a preset name or a "
+            f"list of preset names, got {type(raw).__name__}"
+        )
+
     def _load_protocol(self, entry) -> dict[str, Any]:
         """Load the workflow protocol, or return empty data when absent.
 
@@ -108,19 +166,37 @@ class ConfigLoader:
         ``parameters["smear"]`` for the smear workflow) and points to a
         name inside the protocol YAML referenced by ``entry.protocol_file``.
         Direct base workflows deliberately have no protocol YAML or slot.
+
+        For workflows with multiple backends (e.g. ``banddos`` runs on
+        ABACUS *and* FLEUR), the protocol name may only exist in the
+        backend-specific sub-YAML (``parameters/<backend>/<file>.yml``).
+        When the top-level ``parameters/<file>.yml`` does not contain
+        the protocol name, this method silently returns ``{}`` so the
+        backend-specific presets can carry everything the workflow
+        needs (FLEUR's ``scf.yml`` puts the SCF base while the protocol
+        carries band_wf + dos_wf
+        inside each preset).
+
+        A **list** of preset names is allowed; the first one found in the
+        protocol YAML becomes the default ``workflow_data`` (all requested
+        presets are submitted via :meth:`_load_protocol_entries`).
         """
         if entry.protocol_file is None:
             return {}
+        entries = self._load_protocol_entries(entry)
+        return dict(entries[0][1]) if entries else {}
 
-        name = self.input_params["parameters"][entry.workflow_key]
+    def _load_protocol_entries(self, entry) -> list[tuple[str, dict[str, Any]]]:
+        """Return ``[(preset_name, raw_preset_table), ...]`` for every
+        requested protocol preset (single name or list)."""
+        if entry.protocol_file is None:
+            return []
+        names = self._protocol_names(entry)
         protocol_path = PROTOCOL_DIR / entry.protocol_file
+        if not protocol_path.is_file():
+            return []
         table = read_yaml(protocol_path)
-        if name not in table:
-            raise KeyError(
-                f"Protocol '{name}' not found in {protocol_path}; "
-                f"available: {list(table)}"
-            )
-        return table[name]
+        return [(name, table[name]) for name in names if name in table]
 
     def _parse_protocol(self, protocol: dict[str, Any], entry) -> dict[str, Any]:
         """Apply workflow-specific parser hook if available."""

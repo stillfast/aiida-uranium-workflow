@@ -1,0 +1,187 @@
+# Defect workflow protocol — per-backend layout (same as magmom.yml).
+# Each preset carries the defect-formation-energy settings:
+#
+#   supercell_matrix    — diagonal supercell repetition (e.g. [2,2,2]);
+#                         omit to use the input structure as the host cell
+#   defect              — defect definition:
+#                           vacancy:     {type: vacancy, site_index: int,
+#                                         element: str, label: str}
+#                           interstitial:{type: interstitial, element: str,
+#                                         position: [x,y,z] (fractional),
+#                                         label: str}
+#                         ``site_index`` indexes the sites of the supercell;
+#                         ``position`` is the fractional coordinate of the
+#                         interstitial site (choose a sensible high-symmetry
+#                         interstitial position, e.g. a tetrahedral /
+#                         octahedral site — the code inserts the atom there).
+#   wf_parameters       — {'mode': 'relax'|'scf'}: 'relax' optimizes atomic
+#                         positions only (the cell stays fixed), 'scf' runs
+#                         a plain fixed-lattice SCF.
+#   formation energy     — E_f = E_defect − E_host × (N_defect / N_host)
+#                         (no chemical potentials needed).
+#   relax_settings      — force-convergence settings for the relax modes
+#                         (both backends), matching the relax workflow
+#                         protocol (parameters/relax.yml):
+#                           abacus: force_cutoff 0.05 eV/Å (force_thr_ev)
+#                                   (+ optional RelaxOptions overrides)
+#                           fleur:  force_criterion 0.00097 Ha/bohr
+#                                   (≈ 0.05 eV/Å; 1 Ha/bohr = 51.42 eV/Å)
+#                                   + change_mixing_criterion / relax_iter
+#                         Defaults (ABACUS): relax_type='positions' (atoms
+#                         only, cell fixed), force_cutoff 0.05 eV/Å.
+#
+# The per-backend SCF base lives in ``parameters/<backend>/scf.yml``
+# (shared with banddos / elastic / relax).
+#
+#   input.json:
+#     {
+#       "workflow": "defects",
+#       "parameters": {
+#         "abacus": {"scf": ["lcao_r"]},
+#         "fleur":  {"scf": ["nosoc"]},
+#         "defects": "test"
+#       },
+#       "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+#       "profile": "aiida_profile",
+#       "code": {"abacus": "...", "fleur": "...", "inpgen": "..."}
+#     }
+
+test:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      # Fractional coordinate of the interstitial site inside the
+      # supercell — adjust to the crystal's interstitial positions.
+      position: [0.25, 0.25, 0.25]
+      label: int_U
+    wf_parameters:
+      mode: relax
+
+test_relax:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_cutoff: 0.05       # eV/Å (force_thr_ev)
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      position: [0.25, 0.25, 0.25]
+      label: int_U
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_criterion: 0.00097      # Ha/bohr ≈ 0.05 eV/Å
+      change_mixing_criterion: 0.005  # below the residual force (~0.008) so relax iterates to force_criterion instead of stopping with exit 354
+      relax_iter: 5
+
+vacancy_scf:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+
+vacancy_relax:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_cutoff: 0.05       # eV/Å (force_thr_ev)
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_criterion: 0.00097      # Ha/bohr ≈ 0.05 eV/Å
+      change_mixing_criterion: 0.005  # below the residual force (~0.008) so relax iterates to force_criterion instead of stopping with exit 354
+      relax_iter: 5
+
+interstitial_scf:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      position: [0.25, 0.25, 0.0]
+      label: int_U
+    wf_parameters:
+      mode: scf
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      position: [0.25, 0.25, 0.0]
+      label: int_U
+    wf_parameters:
+      mode: scf
+
+interstitial_relax:
+  abacus:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      position: [0.25, 0.25, 0.0]
+      label: int_U
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_cutoff: 0.05       # eV/Å (force_thr_ev)
+  fleur:
+    supercell_matrix: [2, 2, 2]
+    defect:
+      type: interstitial
+      element: U
+      position: [0.25, 0.25, 0.0]
+      label: int_U
+    wf_parameters:
+      mode: relax
+    relax_settings:
+      force_criterion: 0.00097      # Ha/bohr ≈ 0.05 eV/Å
+      change_mixing_criterion: 0.005  # below the residual force (~0.008) so relax iterates to force_criterion instead of stopping with exit 354
+      relax_iter: 5

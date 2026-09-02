@@ -1,0 +1,24 @@
+test:
+  parameters:
+    incar:
+      system: bcc-uranium
+      ispin: 2
+      prec: Accurate
+      lmaxmix: 6
+      lasph: true
+      lreal: false
+      lcharg: false
+      lwave: false
+
+      encut: 300
+      ismear: 0
+      sigma: 0.2
+      ediff: 1e-6
+      nelm: 100
+      nsw: 0
+
+  potential_family: "PBE"
+  potential_mapping:
+    U: "U"
+  kpoints_spacing: 0.0159 # the unit is A^-1 * 2pi, so 0.1 A^-1 = 0.1/2/pi (A^-1 * 2pi)= 0.0159154943 (A^-1 * 2pi)
+  kpoints_mesh : [18, 18, 18]

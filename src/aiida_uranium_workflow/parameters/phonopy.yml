@@ -1,0 +1,98 @@
+# Phonopy workflow protocol — phonopy-specific parameters only.
+#
+# The ABACUS SCF base (physical / SCF input parameters, k-points,
+# pseudopotentials) lives in ``parameters/abacus/scf.yml`` — the same
+# per-backend preset file shared with banddos / elastic / relax.  The
+# workflow's ``input.json`` selects both sides::
+#
+#     {
+#       "workflow": "phonopy",
+#       "parameters": {
+#         "abacus":  {"scf": ["test"]},   # ABACUS SCF preset (scf.yml)
+#         "phonopy": "test"               # phonopy preset (this file)
+#       },
+#       "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+#       "profile": "aiida_profile",
+#       "code": {"abacus": "abacus@yunhe", "phonopy": "phonopy@cloud"}
+#     }
+#
+# Each preset below is one phonopy run: frozen-phonon supercells are
+# computed with ABACUS (SCF + forces) and post-processed with phonopy
+# (band structure + DOS).
+
+test:
+  # ---- phonopy pre-processing (frozen-phonon supercells) -----------------
+  # Supercell transformation of the **primitive** cell. With
+  # ``primitive_matrix: auto`` the input structure is first reduced to its
+  # minimal primitive cell and the supercell is built from that — so for
+  # bcc-U (input = 2-atom conventional cell) a [2, 2, 2] supercell is only
+  # 8 atoms (a [3, 3, 3] of the conventional cell would be 54). Either a
+  # diagonal shorthand [n, n, n] or a full 3x3 matrix.
+  supercell_matrix: [2, 2, 2]
+  # Whether to work on the primitive cell of the input structure (phonopy's
+  # ``primitive_matrix`` feature):
+  #   auto          — the input cell is reduced to its primitive cell BEFORE
+  #                   building the supercell; band structure / DOS are
+  #                   computed on the primitive reciprocal space (required
+  #                   for the named ``band_paths`` like "bcc" / "fcc" to
+  #                   make sense).
+  #   null / ~      — keep the input cell as-is (no primitive reduction).
+  #   [[...]]       — explicit 3x3 primitive matrix.
+  primitive_matrix: auto
+  # Symmetry tolerance (Å) used for the displacement generation.
+  symprec: 1.0e-5
+  is_symmetry: true
+  distinguish_kinds: true
+  # Frozen-phonon displacement distance (Å).
+  displacement_distance: 0.01
+
+  # ---- phonopy post-processing -------------------------------------------
+  # Band-path mode:
+  #   auto   — high-symmetry path generated automatically (phonopy
+  #            ``BAND_PATHS``): ``band_paths: auto`` uses seekpath; a named
+  #            lattice path ("bcc", "fcc", "hcp", ...) can be given instead.
+  #   manual — use the explicit ``band`` / ``band_labels`` lists below.
+  band_mode: auto
+  # auto mode: emitted as phonopy's BAND run-mode tag ("auto" via
+  # seekpath, or a named path "bcc" / "fcc" / ...). NOTE: BAND_PATHS
+  # alone only sets the path without running the band structure.
+  band_paths: auto            # "auto" | "bcc" | "fcc" | ...
+  # band: [0.0, 0.0, 0.0, 0.5, -0.5, 0.5, ...]   # manual mode: flat k-point list
+  # band_labels: ["Γ", "H", "N", "Γ", "P", "H"]  # manual mode labels
+  band_points: 51             # points per band segment
+
+  # Total DOS (phonopy ``DOS`` + ``MESH``).
+  dos: true
+  mesh: [21, 21, 21]
+  fmin: 0.0
+  fmax: 8.0
+  fpitch: 0.02
+
+  # Scheduler options for the phonopy CalcJob (optional). Defaults:
+  # 1 process, ``withmpi`` taken from the registered phonopy code.
+  options: {}
+
+test_fleur:
+  # FLEUR backend: same phonopy settings as ``test``, forces computed by
+  # FleurScfWorkChain in 'force' mode (l_f="T", see fleur.md §4.5 — FLEUR
+  # only calculates atomic forces when the geometry optimisation is
+  # active; aiida-fleur writes them to relax.xml, exposed as
+  # relax_parameters['posforces'], Htr/bohr → eV/Å in the WorkChain).
+  supercell_matrix: [2, 2, 2]
+  primitive_matrix: auto
+  symprec: 1.0e-5
+  is_symmetry: true
+  distinguish_kinds: true
+  displacement_distance: 0.01
+
+  band_mode: auto
+  band_paths: auto
+  band_points: 51
+
+  dos: true
+  mesh: [21, 21, 21]
+  fmin: 0.0
+  fmax: 8.0
+  fpitch: 0.02
+
+  options: {}

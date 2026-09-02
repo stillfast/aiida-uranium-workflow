@@ -18,7 +18,7 @@ class VaspAdapter(SoftwareAdapter):
     name = "vasp"
 
     def _workchain_entry_point(self) -> str:
-        return "vasp.smear"
+        return "uranium.smear.vasp"
 
     def _build_workchain_inputs(self, structure) -> dict[str, Any]:
         from aiida import orm

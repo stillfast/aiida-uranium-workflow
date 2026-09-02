@@ -1,0 +1,94 @@
+nosoc:
+  # BCC-U 0K, non-collinear backbone (l_noco=T, jspins=2), NO SOC (l_soc=F).
+  # Matches the banddos U-NM-nosoc preset's SCF namespace so both
+  # workflows run the same density.
+  # NOTE: the per-config magmom sweep (NM / FM / AFM) is controlled ONLY
+  # from the top-level protocol parameters/magmom.yml (fleur.magmom_list);
+  # this preset carries just the SCF base. A missing protocol list raises
+  # an error in the FleurMagmomAdapter.
+  wf_parameters:
+    mode: density
+    # 5e-7 instead of 1e-7: the FM seed's charge density oscillates at
+    # ~1e-7 (bcc-U PBE is non-magnetic; the FM moment decays to ~0) and
+    # never dips below the stricter criterion, aborting with exit 362.
+    # 5e-7 still converges the density to ~1e-6 eV energy stability.
+    density_converged: 5.0e-7
+    itmax_per_run: 100
+    fleur_runmax: 5
+    add_comp_para:
+      only_even_MPI: false
+      max_queue_nodes: 20
+      max_queue_wallclock_sec: 86400
+    inpxml_changes:
+      # Non-collinear backbone without SOC; hist BZ integration is
+      # mandatory for l_noco=T (gauss/tria unavailable).
+      - ['set_inpchanges', {changes: {l_noco: true, l_ss: false, l_soc: false}}]
+      # SOC quantization axis (theta/phi on the <soc> tag; default 0).
+      - ['set_inpchanges', {changes: {theta: 0.0, phi: 0.0, spav: false}, path_spec: {phi: {contains: soc}, theta: {contains: soc}}}]
+      # Non-collinear magnetism settings.
+      - ['set_complex_tag', {tag_name: mtNocoParams, changes: {l_mperp: 'T', l_relaxSQA: 'F'}}]
+      # Core-electron tail correction is incompatible with l_noco=T.
+      - ['set_complex_tag', {tag_name: coreElectrons, changes: {ctail: 'F'}}]
+      # l_noco=T only allows histogram BZ integration.
+      - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist, fermiSmearingEnergy: 0.0036743851}}]  # 0.1 eV / 27.2114
+  calc_parameters:
+    comp:
+      kmax: 7.0
+      gmaxxc: 12.0
+      gmax: 16.0
+      jspins: 2              # FLEUR noco uses jspins=2 (schema cap)
+    kpt:
+      div1: 11
+      div2: 11
+      div3: 11
+      tkb: 0.0005
+      gamma: true
+    atom:
+      element: U
+      bmu: 0.0               # default seed; per-config override comes from
+                             # the protocol's fleur.magmom_list entries
+
+soc:
+  # BCC-U 0K, full SOC: non-collinear backbone (l_noco=T, jspins=2) +
+  # spin-orbit coupling (l_soc=T). Matches banddos U-NM-soc's SCF
+  # namespace; the magmom sweep is controlled from the top-level
+  # protocol (parameters/magmom.yml fleur.magmom_list) as for nosoc.
+  wf_parameters:
+    mode: density
+    # 5e-7 instead of 1e-7: the FM seed's charge density oscillates at
+    # ~1e-7 (bcc-U PBE is non-magnetic; the FM moment decays to ~0) and
+    # never dips below the stricter criterion, aborting with exit 362.
+    # 5e-7 still converges the density to ~1e-6 eV energy stability.
+    density_converged: 5.0e-7
+    itmax_per_run: 100
+    fleur_runmax: 5
+    add_comp_para:
+      only_even_MPI: false
+      max_queue_nodes: 20
+      max_queue_wallclock_sec: 86400
+    inpxml_changes:
+      # Full SOC: non-collinear backbone + spin-orbit coupling.
+      - ['set_inpchanges', {changes: {l_noco: true, l_ss: false, l_soc: true}}]
+      # SOC quantization axis (theta/phi on the <soc> tag; default 0).
+      - ['set_inpchanges', {changes: {theta: 0.0, phi: 0.0, spav: false}, path_spec: {phi: {contains: soc}, theta: {contains: soc}}}]
+      # Non-collinear magnetism settings.
+      - ['set_complex_tag', {tag_name: mtNocoParams, changes: {l_mperp: 'T', l_relaxSQA: 'F'}}]
+      # Core-electron tail correction is incompatible with l_noco=T.
+      - ['set_complex_tag', {tag_name: coreElectrons, changes: {ctail: 'F'}}]
+      # SOC requires histogram BZ integration.
+      - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist, fermiSmearingEnergy: 0.0036743851}}]
+  calc_parameters:
+    comp:
+      kmax: 7.0
+      gmaxxc: 12.0
+      gmax: 16.0
+      jspins: 2              # FLEUR SOC uses jspins=2 (not 4)
+    kpt:
+      div1: 11
+      div2: 11
+      div3: 11
+      tkb: 0.0005
+      gamma: true
+    atom:
+      element: U
+      bmu: 0.0

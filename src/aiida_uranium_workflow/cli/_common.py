@@ -5,7 +5,7 @@ Goals:
 
 * Centralise the WorkChain detection / report-writing pipeline shared
   by the unified ``aiida-uranium {run,report,archive,copy}`` entry
-  point (base, smear, convergence, magmom).
+  point (base, smear, convergence, magmom, banddos).
 * Expose a :data:`METHOD_SPECS` registry that drives the unified
   ``aiida-uranium {run,report,archive}`` entry point — adding a new
   method only requires extending this dict.
@@ -24,20 +24,38 @@ from aiida_uranium_workflow.utils.config import ConfigLoader
 from aiida_uranium_workflow.utils.report.convergence import (
     generate_report as generate_convergence_report,
 )
+from aiida_uranium_workflow.utils.report.elastic import (
+    generate_report as generate_elastic_report,
+)
 from aiida_uranium_workflow.utils.report.magmom import (
     generate_report as generate_magmom_report,
+)
+from aiida_uranium_workflow.utils.report.phonopy import (
+    generate_report as generate_phonopy_report,
+)
+from aiida_uranium_workflow.utils.report.relax import (
+    generate_report as generate_relax_report,
 )
 from aiida_uranium_workflow.utils.report.smear import (
     generate_report as generate_smear_report,
 )
-
-import argparse
-import json
-import sys
+from aiida_uranium_workflow.utils.report.eos import (
+    generate_report as generate_eos_report,
+)
+from aiida_uranium_workflow.utils.report.defects import (
+    generate_report as generate_defects_report,
+)
+from aiida_uranium_workflow.utils.report.supercell import (
+    generate_report as generate_supercell_report,
+)
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+import argparse
+import inspect
+import json
+import sys
 
 # ---------------------------------------------------------------------------
 # Method registry (drives the unified CLI)
@@ -49,7 +67,7 @@ class MethodSpec:
     """All the per-method bits the unified CLI needs to know about."""
 
     #: Canonical method name (``"base"`` / ``"smear"`` /
-    #: ``"convergence"`` / ``"magmom"``).
+    #: ``"convergence"`` / ``"magmom"`` / ``"banddos"``).
     name: str
     #: ``class_name -> backend`` mapping used for filter / dispatch.
     class_to_backend: Mapping[str, str]
@@ -73,10 +91,39 @@ CONVERGENCE_CLASS_TO_BACKEND: dict[str, str] = {
 MAGMOM_CLASS_TO_BACKEND: dict[str, str] = {
     "VaspMagmomWorkChain": "vasp",
     "AbacusMagmomWorkChain": "abacus",
+    "FleurMagmomWorkChain": "fleur",
+    "QeMagmomWorkChain": "qe",
 }
 BASE_CLASS_TO_BACKEND: dict[str, str] = {
     "VaspWorkChain": "vasp",
     "AbacusBaseWorkChain": "abacus",
+}
+BANDDOS_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusBandWorkChain": "abacus",
+}
+RELAX_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusRelaxWorkChain": "abacus",
+    "FleurRelaxWorkChain": "fleur",
+}
+ELASTIC_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusElasticWorkChain": "abacus",
+    "VaspElasticWorkChain": "vasp",
+    "FleurElasticWorkChain": "fleur",
+}
+PHONOPY_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusPhonopyWorkChain": "abacus",
+    "FleurPhonopyWorkChain": "fleur",
+}
+EOS_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusEosWorkChain": "abacus",
+    "FleurEosWorkChain": "fleur",
+}
+DEFECTS_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusDefectsWorkChain": "abacus",
+    "FleurDefectsWorkChain": "fleur",
+}
+SUPERCELL_CLASS_TO_BACKEND: dict[str, str] = {
+    "SupercellScfWorkChain": "abacus",
 }
 
 
@@ -107,7 +154,50 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         name="magmom",
         class_to_backend=MAGMOM_CLASS_TO_BACKEND,
         generate_report=generate_magmom_report,
-        backend_to_key={"abacus": "magmom", "vasp": "magmom"},
+        backend_to_key={"abacus": "magmom", "vasp": "magmom",
+                        "fleur": "magmom", "qe": "magmom"},
+    ),
+    "banddos": MethodSpec(
+        name="banddos",
+        class_to_backend=BANDDOS_CLASS_TO_BACKEND,
+        generate_report=_unsupported_base_report,
+        backend_to_key={"abacus": "scf", "fleur": "scf"},
+    ),
+    "relax": MethodSpec(
+        name="relax",
+        class_to_backend=RELAX_CLASS_TO_BACKEND,
+        generate_report=generate_relax_report,
+        backend_to_key={"abacus": "scf", "fleur": "scf"},
+    ),
+    "elastic": MethodSpec(
+        name="elastic",
+        class_to_backend=ELASTIC_CLASS_TO_BACKEND,
+        generate_report=generate_elastic_report,
+        backend_to_key={"abacus": "scf", "vasp": "elastic", "fleur": "scf"},
+    ),
+    "phonopy": MethodSpec(
+        name="phonopy",
+        class_to_backend=PHONOPY_CLASS_TO_BACKEND,
+        generate_report=generate_phonopy_report,
+        backend_to_key={"abacus": "scf", "fleur": "scf"},
+    ),
+    "eos": MethodSpec(
+        name="eos",
+        class_to_backend=EOS_CLASS_TO_BACKEND,
+        generate_report=generate_eos_report,
+        backend_to_key={"abacus": "scf", "fleur": "scf"},
+    ),
+    "defects": MethodSpec(
+        name="defects",
+        class_to_backend=DEFECTS_CLASS_TO_BACKEND,
+        generate_report=generate_defects_report,
+        backend_to_key={"abacus": "scf", "fleur": "scf"},
+    ),
+    "supercell": MethodSpec(
+        name="supercell",
+        class_to_backend=SUPERCELL_CLASS_TO_BACKEND,
+        generate_report=generate_supercell_report,
+        backend_to_key={"abacus": "scf"},
     ),
 }
 
@@ -173,8 +263,7 @@ def resolve_method(
     if cli_method:
         if cli_method not in METHOD_SPECS:
             raise ValueError(
-                f"Unknown method '{cli_method}'. "
-                f"Supported: {list(METHOD_SPECS)}"
+                f"Unknown method '{cli_method}'. " f"Supported: {list(METHOD_SPECS)}"
             )
         return cli_method
 
@@ -348,6 +437,7 @@ def generate_one_report(
     * ``"failed: id=<id> output_parameters -> <e>"``
     * ``"skipped: id=<id> unsupported WorkChain type '<ClassName>'"``
     * ``"skipped: id=<id> not finished (state=<...>)"``
+    * ``"skipped: id=<id> not successful (exit_status=<code>)"``
     * ``"failed: write <path> -> <e>"``
 
     The status strings mention ``id=`` (instead of ``pk=``) so a UUID
@@ -360,41 +450,77 @@ def generate_one_report(
         _, exc = result
         return f"failed: load_node({node_identifier}) -> {exc}"
 
+    # ``result`` is a ``(workchain, state_value)`` tuple while the node is
+    # not finished yet — unpack it BEFORE touching the workchain (reading
+    # ``process_class`` first used to crash on the tuple).
+    if status == "not_finished":
+        _, state_value = result
+        return f"skipped: id={short} not finished " f"(state={state_value})"
+
     workchain = result
     class_name = workchain.process_class.__name__
     backend = resolve_backend(class_name, class_to_backend)
     if backend is None:
-        return (
-            f"skipped: id={short} unsupported WorkChain type {class_name!r}"
-        )
+        return f"skipped: id={short} unsupported WorkChain type {class_name!r}"
 
-    if status == "not_finished":
-        _, state_value = result
-        return (
-            f"skipped: id={short} not finished "
-            f"(state={state_value})"
-        )
+    # Finished but unsuccessful (non-zero exit status, e.g. a failed EOS
+    # SCF child): ignore the data point instead of emitting a misleading
+    # report. The caller still generates the remaining reports.
+    if not workchain.is_finished_ok:
+        return f"skipped: id={short} not successful (exit_status={workchain.exit_status})"
+
+    # Optional per-report extras: report generators that can also render
+    # figures (e.g. phonopy's band + DOS image) accept ``figure_dir`` so
+    # the figure lands next to the Markdown report. Generators that work
+    # from the raw node (e.g. relax, where the plugin ``abacus.relax`` /
+    # ``fleur.relax`` WorkChains have no combined ``output_parameters``)
+    # accept ``workchain_node``. ``report_stem`` lets figure-generating
+    # reports name their images after the report file
+    # (``report_<key>_<short>.md``). Generators without such parameters
+    # are called exactly as before.
+    report_kwargs: dict[str, Any] = {}
+    signature = inspect.signature(generate_report)
+    if "figure_dir" in signature.parameters:
+        report_kwargs["figure_dir"] = str(output_path.parent)
+    if "report_stem" in signature.parameters:
+        report_kwargs["report_stem"] = output_path.stem
+    if "workchain_node" in signature.parameters:
+        report_kwargs["workchain_node"] = workchain
 
     try:
         output_parameters = workchain.outputs.output_parameters.get_dict()
-    except Exception as e:
-        return f"failed: id={short} output_parameters -> {e}"
+    except Exception as exc:
+        # Plugin WorkChains (relax / band / ...) often expose no combined
+        # ``output_parameters``; let generators that accept the node render
+        # the report from its raw outputs instead of failing.
+        if "workchain_node" not in report_kwargs:
+            return f"failed: id={short} output_parameters -> {exc}"
+        output_parameters = {}
 
     # For magmom workflows, ``AbacusMagmomWorkChain`` /
-    # ``VaspMagmomWorkChain`` do not stash the original ``magmom_list`` in
+    # ``VaspMagmomWorkChain`` do not stash the original magmom config in
     # ``output_parameters``. The list lives only on the WorkChain's
-    # ``inputs.magmom_list`` port, so inject it here so the report can
-    # render the ``initial magmom`` column. The injection is done on a
-    # local copy — AiiDA's stored ``output_parameters`` Dict is untouched.
+    # ``inputs.magmom_list`` (per-species dicts) or
+    # ``inputs.magmom_per_atom_list`` (per-site lists) port, so inject it
+    # here so the report can render the ``initial magmom`` column. The
+    # injection is done on a local copy — AiiDA's stored
+    # ``output_parameters`` Dict is untouched.
     if class_name in MAGMOM_CLASS_TO_BACKEND and "magmom_list" not in output_parameters:
         try:
-            magmom_list_node = workchain.inputs.magmom_list
-            output_parameters = dict(output_parameters)
-            output_parameters["magmom_list"] = list(magmom_list_node.get_list())
+            if "magmom_list" in workchain.inputs:
+                magmom_list_node = workchain.inputs.magmom_list
+                output_parameters = dict(output_parameters)
+                output_parameters["magmom_list"] = list(magmom_list_node.get_list())
+            elif "magmom_per_atom_list" in workchain.inputs:
+                magmom_per_atom_node = workchain.inputs.magmom_per_atom_list
+                output_parameters = dict(output_parameters)
+                output_parameters["magmom_list"] = list(magmom_per_atom_node.get_list())
         except (AttributeError, KeyError):
             pass
 
-    report_text = generate_report(output_parameters, node_identifier, backend)
+    report_text = generate_report(
+        output_parameters, node_identifier, backend, **report_kwargs
+    )
     if write_text_report(report_text, output_path):
         return f"ok -> {output_path}"
     return f"failed: write {output_path}"
@@ -417,7 +543,10 @@ def parse_method(value: str) -> str:
 def build_unified_parser(
     *,
     prog: str = "aiida-uranium",
-    description: str = "Unified CLI for aiida-uranium-workflow (run / report / archive / copy).",
+    description: str = (
+        "Unified CLI for aiida-uranium-workflow (run / report / archive /"
+        " copy; methods: base / smear / convergence / magmom / banddos)."
+    ),
 ) -> argparse.ArgumentParser:
     """Top-level parser for ``aiida-uranium {run,report,archive,copy}``."""
     p = argparse.ArgumentParser(prog=prog, description=description)
@@ -427,9 +556,9 @@ def build_unified_parser(
     run_p = sub.add_parser(
         "run",
         prog=f"{prog} run",
-        help="Run a workflow (base / smear / convergence / magmom).",
+        help="Run a workflow (base / smear / convergence / magmom / banddos).",
         description=(
-            "Submit one base / smear / convergence / magmom WorkChain per "
+            "Submit one base / smear / convergence / magmom / banddos WorkChain per "
             "(backend, preset, structure) combination defined in the unified "
             "input JSON."
         ),
@@ -439,7 +568,7 @@ def build_unified_parser(
         type=parse_method,
         default=None,
         help=(
-            "Workflow method: base / smear / convergence / magmom. "
+            "Workflow method: base / smear / convergence / magmom / banddos. "
             "If omitted, the value is read from input.json['workflow']."
         ),
     )
@@ -507,10 +636,7 @@ def build_unified_parser(
         "--output-dir",
         dest="output_dir",
         default=None,
-        help=(
-            "Directory to write reports into. "
-            "Default: <input_dir>/reports."
-        ),
+        help=("Directory to write reports into. " "Default: <input_dir>/reports."),
     )
     report_p.add_argument(
         "-p",
@@ -732,6 +858,7 @@ __all__ = [
     "SMEAR_CLASS_TO_BACKEND",
     "CONVERGENCE_CLASS_TO_BACKEND",
     "MAGMOM_CLASS_TO_BACKEND",
+    "BANDDOS_CLASS_TO_BACKEND",
     "get_method_spec",
     "parse_method",
     "resolve_method",
@@ -750,4 +877,3 @@ __all__ = [
     # Parser
     "build_unified_parser",
 ]
-

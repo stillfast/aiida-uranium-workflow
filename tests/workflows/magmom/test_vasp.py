@@ -137,21 +137,13 @@ def test_child_inputs_metadata_label_structure():
 
 def test_parse_and_gather_magmom_results(aiida_profile_clean):
     """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs."""
-    status_dict = orm.Dict({})
     child_pks = orm.List([])
-    magmom_list = orm.List([])
 
-    result = parse_and_gather_magmom_results(
-        status_dict=status_dict,
-        child_pks=child_pks,
-        magmom_list=magmom_list,
-    )
+    result = parse_and_gather_magmom_results(child_pks=child_pks)
 
     assert isinstance(result, orm.Dict)
     result_dict = result.get_dict()
     assert "magnetization" in result_dict
     assert "site_magnetization" in result_dict
-    assert "magmom_list" in result_dict
     assert result_dict["magnetization"] == {}
     assert result_dict["site_magnetization"] == {}
-    assert result_dict["magmom_list"] == []

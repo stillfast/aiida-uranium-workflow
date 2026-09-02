@@ -7,6 +7,28 @@ yeesuan:
     max_wallclock_seconds: 7200
     queue_name: "q_ysuan"
     withmpi: true
+yeesuan_ys:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_wallclock_seconds: 43200
+    queue_name: "d2_ys"
+    withmpi: true
+# d2_ys variant for the big supercell jobs: the 8×8×8 (1024-atom) SCF
+# needed ~50 min per electronic iteration and did not converge within
+# 12 h; the partition accepts up to 48 h (verified with the manual
+# Num_250 slurm run), so give it the full 48 h.
+yeesuan_ys_48h:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_wallclock_seconds: 172800
+    queue_name: "d2_ys"
+    withmpi: true
 xinghe:
   options:
     resources:
@@ -24,4 +46,27 @@ guangzhou:
       tot_num_mpiprocs: 64
     max_wallclock_seconds: 7200
     queue_name: "deimos"
+    withmpi: true
+yunhe:
+  options:
+    optimize_resources: false
+    resources:
+      # 8 MPI ranks/node. The band / DOS runs operate on small k-point
+      # sets (band path 0.02 Å⁻¹ -> 406 k-points; DOS reuses the SCF
+      # mesh -> 56 irreducible k-points). FleurBaseWorkChain.check_kpts
+      # aborts with exit 390 if the best divisor-based setup uses < 60%
+      # of the node (24 ranks -> only 14 usable -> 58%).
+      # NOTE: tot_num_mpiprocs must NOT be set here — check_kpts
+      # re-optimizes num_mpiprocs_per_machine per k-point count (e.g.
+      # 8 -> 7 for the 406-k-point band path) and leaves any pinned
+      # tot_num_mpiprocs stale, which trips the SlurmScheduler
+      # consistency check (`tot_num_mpiprocs != num_mpiprocs_per_machine
+      # * num_machines`) and makes the WorkChain EXCEPT. Without it,
+      # Slurm derives the total automatically.
+      num_machines: 1
+      num_mpiprocs_per_machine: 8
+    # 6 h: 54-atom U supercell SCFs (phonopy / eos) exceed 2 h even with
+    # nspin=1; jobs that finish early do not consume the limit.
+    max_wallclock_seconds: 21600
+    queue_name: "AB"
     withmpi: true

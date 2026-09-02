@@ -1,0 +1,132 @@
+# Elastic workflow protocol — per-backend layout (same as magmom.yml).
+# Each preset carries the strain magnitudes for the deformation set:
+#
+#   abacus:  stress method (ABACUS prints TOTAL-STRESS) — full 6x6 tensor
+#   vasp:    stress method (VASP prints the stress tensor in OUTCAR /
+#            vasprun.xml, kB) — full 6x6 tensor; SCF/relax INCAR comes
+#            from ``parameters/vasp/elastic.yml``. The vasp block
+#            additionally carries ``relax_lattice`` (default true: fully
+#            relax the cell + ions with a ``vasp.relax`` child before the
+#            deformations — the VASP counterpart of the official ABACUS
+#            example's ``prepare_elastic.sh`` / ``../OPT/`` cell-relax)
+#            and optional ``relax_settings`` (VaspRelaxWorkChain
+#            RelaxOptions)
+#   fleur:   energy method (FLEUR has no stress output) — full 6x6 tensor
+#            via the Voigt quadratic fit (combined strains deliver the
+#            off-diagonal C12 / C13 / C23). The strained-cell children are
+#            ``FleurScfWorkChain`` (density-converged SCF — EOS-style
+#            energy quality) when ``relax_internal`` is false (the default
+#            in this file for the bcc-U cell, which has no free internal
+#            coordinates), or ``FleurRelaxWorkChain``
+#            (relaxation_type='atoms') when true — the force-mode
+#            relaxation SCF alone does not reach meV energy accuracy, so
+#            then also pass ``relax_wf_parameters: {run_final_scf: true}``
+#            for a final density-converged energy
+#
+# Deformations follow the Materials Project methodology:
+#   3 normal strains (ε1, ε2, ε3) × norm_strains
+#   + 3 shear strains (ε4, ε5, ε6) × shear_strains
+#   = 24 deformed structures, each run with the internal atomic
+#   coordinates relaxed under the strain (``relax_internal: true``,
+#   default for abacus / vasp — the cell stays fixed at the strained
+#   lattice, matching the official ABACUS elastic example: one
+#   ``calculation relax`` per deformed cell, giving the physically
+#   relevant "relaxed" elastic constants; VASP uses ISIF=2 + IBRION=2,
+#   the example's own README notes ``ISIF = 2``). Set
+#   ``relax_internal: false`` for clamped-ion constants (fixed-lattice
+#   SCF children). For cells without free internal coordinates (e.g. the
+#   2-atom bcc U cell) the relaxation is a no-op — fleur therefore
+#   defaults to false (see the fleur block notes).
+#
+# The FLEUR block additionally carries ``combined_strains`` — user-method
+# biaxial / triaxial Voigt modes, each applied at every ``norm_strains``
+# magnitude (5 modes × 4 magnitudes = +20 structures):
+#
+#   [1,1,0,0,0,0]   ε7  = (δ, δ, 0, 0, 0, 0)  → C11 + C22 + 2·C12
+#   [1,0,1,0,0,0]   ε8  = (δ, 0, δ, 0, 0, 0)  → C11 + C33 + 2·C13
+#   [0,1,1,0,0,0]   ε9  = (0, δ, δ, 0, 0, 0)  → C22 + C33 + 2·C23
+#   [1,1,1,0,0,0]   cubic ε1 → (3·C11 + 6·C12)·δ²/2
+#   [0,0,0,1,1,1]   cubic ε2 → (3·C44)·δ²/2
+#
+# The per-backend SCF base lives in ``parameters/<backend>/scf.yml``
+# (shared with banddos / relax).
+
+test:
+  abacus:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_internal: true
+  vasp:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_lattice: true
+    relax_internal: true
+  fleur:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    # bcc-U 2-atom cell has no free internal coordinates → skip the
+    # position relaxation (no-op) and use the plain density-converged
+    # FleurScfWorkChain (EOS-style energy quality). For cells with free
+    # internal coordinates (e.g. α-U) set ``relax_internal: true`` and
+    # add ``relax_wf_parameters: {run_final_scf: true}`` so the final
+    # energy comes from a density-converged SCF, not the force-mode
+    # relaxation SCF.
+    relax_internal: false
+    combined_strains:
+      - [1, 1, 0, 0, 0, 0]
+      - [1, 0, 1, 0, 0, 0]
+      - [0, 1, 1, 0, 0, 0]
+      - [1, 1, 1, 0, 0, 0]
+      - [0, 0, 0, 1, 1, 1]
+
+test_soc:
+  abacus:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+  vasp:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_lattice: true
+  fleur:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    # bcc-U 2-atom cell has no free internal coordinates → skip the
+    # position relaxation (no-op) and use the plain density-converged
+    # FleurScfWorkChain (EOS-style energy quality). For cells with free
+    # internal coordinates (e.g. α-U) set ``relax_internal: true`` and
+    # add ``relax_wf_parameters: {run_final_scf: true}`` so the final
+    # energy comes from a density-converged SCF, not the force-mode
+    # relaxation SCF.
+    relax_internal: false
+    combined_strains:
+      - [1, 1, 0, 0, 0, 0]
+      - [1, 0, 1, 0, 0, 0]
+      - [0, 1, 1, 0, 0, 0]
+      - [1, 1, 1, 0, 0, 0]
+      - [0, 0, 0, 1, 1, 1]
+
+test_si:
+  abacus:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+  vasp:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_lattice: true
+  fleur:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    # bcc-U 2-atom cell has no free internal coordinates → skip the
+    # position relaxation (no-op) and use the plain density-converged
+    # FleurScfWorkChain (EOS-style energy quality). For cells with free
+    # internal coordinates (e.g. α-U) set ``relax_internal: true`` and
+    # add ``relax_wf_parameters: {run_final_scf: true}`` so the final
+    # energy comes from a density-converged SCF, not the force-mode
+    # relaxation SCF.
+    relax_internal: false
+    combined_strains:
+      - [1, 1, 0, 0, 0, 0]
+      - [1, 0, 1, 0, 0, 0]
+      - [0, 1, 1, 0, 0, 0]
+      - [1, 1, 1, 0, 0, 0]
+      - [0, 0, 0, 1, 1, 1]

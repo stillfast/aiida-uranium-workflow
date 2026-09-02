@@ -1,0 +1,104 @@
+nosoc:
+  # BCC-U 0K, **plain non-magnetic** SCF: jspins=1, l_noco=F, l_soc=F.
+  # SCF base only — the volume-relaxation settings live in the
+  # workflow protocol (parameters/relax.yml).
+  wf_parameters:
+    mode: density
+    density_converged: 1.0e-7
+    itmax_per_run: 100
+    fleur_runmax: 5
+    add_comp_para:
+      only_even_MPI: false
+      max_queue_nodes: 20
+      max_queue_wallclock_sec: 86400
+    inpxml_changes:
+      - ['set_inpchanges', {changes: {l_noco: false, l_ss: false, l_soc: false}}]
+      - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: gauss, fermiSmearingEnergy: 0.0036743851}}]  # 0.1 eV / 27.2114
+  calc_parameters:
+    comp:
+      kmax: 7.0
+      gmaxxc: 12.0
+      gmax: 16.0
+      jspins: 1
+    kpt:
+      div1: 11
+      div2: 11
+      div3: 11
+      tkb: 0.0005
+      gamma: true
+    atom:
+      element: U
+      bmu: 0.0
+
+nosoc_el:
+  # BCC-U 0K elastic-constants variant of ``nosoc``: tighter k-mesh and
+  # density convergence. The elastic deformations break the cubic
+  # symmetry (normal strains → tetragonal, shear → monoclinic/triclinic),
+  # and FLEUR's symmetry-reduced sampling of a fixed 11³ mesh then gives
+  # each strained cell a *different* number of irreducible k-points
+  # (e.g. 126 for a tetragonal cell vs ~40 for the cubic one) — the
+  # energy converges to different depths and the strain response is
+  # polluted by ~meV offsets (shear states even appear lower than the
+  # EOS minimum). A denser mesh (15³) + density_converged 1e-8 shrinks
+  # this sampling bias below the ~2 meV strain signal.
+  wf_parameters:
+    mode: density
+    density_converged: 1.0e-8
+    itmax_per_run: 100
+    fleur_runmax: 5
+    add_comp_para:
+      only_even_MPI: false
+      max_queue_nodes: 20
+      max_queue_wallclock_sec: 86400
+    inpxml_changes:
+      - ['set_inpchanges', {changes: {l_noco: false, l_ss: false, l_soc: false}}]
+      - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: gauss, fermiSmearingEnergy: 0.0036743851}}]  # 0.1 eV / 27.2114
+  calc_parameters:
+    comp:
+      kmax: 7.0
+      gmaxxc: 12.0
+      gmax: 16.0
+      jspins: 1
+    kpt:
+      div1: 15
+      div2: 15
+      div3: 15
+      tkb: 0.0005
+      gamma: true
+    atom:
+      element: U
+      bmu: 0.0
+
+soc:
+  # BCC-U 0K, **full SOC**: non-collinear backbone (l_noco=T, jspins=2)
+  # + spin-orbit coupling (l_soc=T). SCF base only.
+  wf_parameters:
+    mode: density
+    density_converged: 1.0e-7
+    itmax_per_run: 100
+    fleur_runmax: 5
+    add_comp_para:
+      only_even_MPI: false
+      max_queue_nodes: 20
+      max_queue_wallclock_sec: 86400
+    inpxml_changes:
+      - ['set_inpchanges', {changes: {l_noco: true, l_ss: false, l_soc: true}}]
+      - ['set_inpchanges', {changes: {theta: 0.0, phi: 0.0, spav: false}, path_spec: {phi: {contains: soc}, theta: {contains: soc}}}]
+      - ['set_complex_tag', {tag_name: mtNocoParams, changes: {l_mperp: 'T', l_relaxSQA: 'F'}}]
+      - ['set_complex_tag', {tag_name: coreElectrons, changes: {ctail: 'F'}}]
+      - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist, fermiSmearingEnergy: 0.0036743851}}]
+  calc_parameters:
+    comp:
+      kmax: 7.0
+      gmaxxc: 12.0
+      gmax: 16.0
+      jspins: 2
+    kpt:
+      div1: 11
+      div2: 11
+      div3: 11
+      tkb: 0.0005
+      gamma: true
+    atom:
+      element: U
+      bmu: 0.0

@@ -52,6 +52,8 @@ DEFAULT_BACKEND_TO_KEY: dict[str, dict[str, str]] = {
     "smear": {"abacus": "smear", "vasp": "vasp"},
     "magmom": {"abacus": "magmom", "vasp": "magmom"},
     "convergence": {"abacus": "convergence", "vasp": "convergence"},
+    "banddos": {"abacus": "scf", "fleur": "scf"},
+    "relax": {"abacus": "scf", "fleur": "scf"},
 }
 
 

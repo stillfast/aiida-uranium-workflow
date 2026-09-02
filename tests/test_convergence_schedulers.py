@@ -291,6 +291,8 @@ class TestMagmomPresetSubkeys:
         assert MagmomWorkflowOrchestrator.PRESET_SUBKEYS == {
             "abacus": "magmom",
             "vasp": "magmom",
+            "fleur": "magmom",
+            "qe": "magmom",
         }
 
 
@@ -310,7 +312,7 @@ class TestAbacusConvergenceAdapter:
             metadata={},
             workflow_data={},
         )
-        assert adapter._workchain_entry_point() == "abacus.convergence"
+        assert adapter._workchain_entry_point() == "uranium.convergence.abacus"
 
     def test_prepare_workflow_inputs_distance(self):
         """Test extraction of convergence lists with distance mode."""
@@ -395,7 +397,7 @@ class TestVaspConvergenceAdapter:
             metadata={},
             workflow_data={},
         )
-        assert adapter._workchain_entry_point() == "vasp.convergence"
+        assert adapter._workchain_entry_point() == "uranium.convergence.vasp"
 
     def test_prepare_workflow_inputs_spacing(self):
         """Test extraction of convergence lists with spacing mode."""

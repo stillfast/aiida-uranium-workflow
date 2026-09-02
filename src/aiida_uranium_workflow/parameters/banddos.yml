@@ -1,0 +1,170 @@
+tdos:
+  abacus:
+    run_bands: true
+    run_dos: true
+    run_proj_dos: false
+    band_kpoints_distance: 0.02
+    dos_kpoints_distance: 0.1
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+  fleur:
+    # FLEUR band / DOS overrides — Hartree energy window, primitive-cell
+    # convention, per-atom band count. See parameters/fleur/banddos.yml
+    # for the SCF base (jspins / l_noco / l_soc / smearing).
+    band_wf:
+      mode: band
+      kpath: seek               # auto-generate high-symmetry path
+      kpoints_distance: 0.02    # Å⁻¹
+      # emin/emax = 0.40 / 1.14 Ha span ±10 eV around E_F ≈ 0.768 Ha
+      # (nosoc SCF E_F; see the comment in the old banddos preset).
+      emin: 0.40
+      emax: 1.14
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+    dos_wf:
+      mode: dos
+      kpath: auto               # mesh, not a band path
+      kpoints_distance: 0.1     # Å⁻¹
+      emin: 0.40
+      emax: 1.14
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+
+pdos:
+  abacus:
+    run_bands: false
+    run_dos: true
+    run_proj_dos: true
+    band_kpoints_distance: 0.02
+    dos_kpoints_distance: 0.1
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+
+# ---------------------------------------------------------------------------
+# SOC runs (wider DOS k-mesh; FLEUR window centred on SOC E_F ≈ 1.444 Ha)
+# ---------------------------------------------------------------------------
+
+tdos_soc:
+  abacus:
+    run_bands: true
+    run_dos: true
+    run_proj_dos: false
+    band_kpoints_distance: 0.02
+    dos_kpoints_distance: 0.15
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+  fleur:
+    band_wf:
+      mode: band
+      kpath: seek
+      kpoints_distance: 0.02
+      # emin/emax = 1.08 / 1.81 Ha span ±10 eV around SOC E_F ≈ 1.444 Ha.
+      emin: 1.08
+      emax: 1.81
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+    dos_wf:
+      mode: dos
+      kpath: auto
+      kpoints_distance: 0.15
+      emin: 1.08
+      emax: 1.81
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+
+pdos_soc:
+  abacus:
+    run_bands: false
+    run_dos: true
+    run_proj_dos: true
+    band_kpoints_distance: 0.02
+    dos_kpoints_distance: 0.15
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+
+# ---------------------------------------------------------------------------
+# Test presets
+# ---------------------------------------------------------------------------
+
+test_si:
+  abacus:
+    run_bands: true
+    run_dos: true
+    run_proj_dos: true
+    band_kpoints_distance: 0.06
+    dos_kpoints_distance: 0.3
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+  fleur:
+    band_wf:
+      mode: band
+      kpath: seek
+      kpoints_distance: 0.06
+      emin: 0.40
+      emax: 1.14
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+    dos_wf:
+      mode: dos
+      kpath: auto
+      kpoints_distance: 0.3
+      emin: 0.40
+      emax: 1.14
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+
+test_soc:
+  abacus:
+    run_bands: true
+    run_dos: true
+    run_proj_dos: true
+    band_kpoints_distance: 0.06
+    dos_kpoints_distance: 0.3
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+  fleur:
+    band_wf:
+      mode: band
+      kpath: seek
+      kpoints_distance: 0.06
+      emin: 1.08
+      emax: 1.81
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+    dos_wf:
+      mode: dos
+      kpath: auto
+      kpoints_distance: 0.3
+      emin: 1.08
+      emax: 1.81
+      use_primitive_cell: true
+      inpxml_changes:
+        - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+        - ['set_complex_tag', {tag_name: bzIntegration, changes: {mode: hist}}]
+
+test_deep_energy:
+  abacus:
+    run_bands: true
+    run_dos: false
+    run_proj_dos: false
+    band_kpoints_distance: 0.02
+    dos_kpoints_distance: 0.15
+    band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}

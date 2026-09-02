@@ -28,9 +28,16 @@ class TestMethodRegistry:
     """``METHOD_SPECS`` exposes one entry per supported method."""
 
     def test_supported_methods(self):
-        assert set(SUPPORTED_METHODS) == {"base", "smear", "convergence", "magmom"}
+        assert set(SUPPORTED_METHODS) == {
+            "base", "smear", "convergence", "magmom", "banddos", "relax",
+            "elastic", "phonopy", "eos", "defects", "supercell",
+        }
 
-    @pytest.mark.parametrize("method", ["base", "smear", "convergence", "magmom"])
+    @pytest.mark.parametrize(
+        "method",
+        ["base", "smear", "convergence", "magmom", "banddos", "relax",
+         "elastic", "phonopy", "eos", "defects", "supercell"],
+    )
     def test_get_method_spec_returns_valid_entry(self, method):
         spec = get_method_spec(method)
         assert spec.name == method
@@ -169,7 +176,9 @@ class TestMethodSpecBackendToKey:
 
     @pytest.mark.parametrize(
         "method",
-        [m for m in METHOD_SPECS if m != "banddos"],
+        [m for m in METHOD_SPECS
+         if m not in ("banddos", "relax", "elastic", "phonopy", "eos", "defects",
+                      "supercell")],
     )
     def test_backend_to_key_covers_abacus_and_vasp(self, method):
         spec = METHOD_SPECS[method]
@@ -186,6 +195,30 @@ class TestMethodSpecBackendToKey:
         assert "abacus" in spec.backend_to_key
         assert "vasp" not in spec.backend_to_key
 
+    def test_relax_has_abacus_and_fleur(self):
+        """relax covers abacus + fleur (no VASP)."""
+        spec = METHOD_SPECS["relax"]
+        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert "vasp" not in spec.backend_to_key
+
+    def test_phonopy_only_has_abacus(self):
+        """phonopy covers abacus + fleur (no VASP)."""
+        spec = METHOD_SPECS["phonopy"]
+        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert "vasp" not in spec.backend_to_key
+
+    def test_eos_has_abacus_and_fleur(self):
+        """eos covers abacus + fleur (no VASP)."""
+        spec = METHOD_SPECS["eos"]
+        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert "vasp" not in spec.backend_to_key
+
+    def test_defects_has_abacus_and_fleur(self):
+        """defects covers abacus + fleur (no VASP)."""
+        spec = METHOD_SPECS["defects"]
+        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert "vasp" not in spec.backend_to_key
+
 
 class TestShortIdPassthrough:
     """``_short_id`` is exposed and handles pks + UUIDs."""
@@ -196,3 +229,68 @@ class TestShortIdPassthrough:
     def test_uuid_prefix(self):
         uuid = "8c0fe1a9-1234-4abc-9def-0a1b2c3d4e5f"
         assert _short_id(uuid) == uuid[:8] == "8c0fe1a9"
+
+
+class TestGenerateOneReportSkips:
+    """``generate_one_report`` must skip unfinished / failed WorkChains
+    instead of crashing on them (regression: the ``process_class`` read
+    used to run before the ``not_finished`` tuple was unpacked, raising
+    ``AttributeError: 'tuple' object has no attribute 'process_class'``)."""
+
+    @staticmethod
+    def _call(monkeypatch, tmp_path, fake_result, fake_status):
+        from aiida_uranium_workflow.cli import _common
+
+        monkeypatch.setattr(
+            _common,
+            "load_finished_workchain",
+            lambda node_identifier, profile: (fake_result, fake_status),
+        )
+        return _common.generate_one_report(
+            node_identifier=123,
+            output_path=tmp_path / "report.md",
+            profile=None,
+            class_to_backend=_common.EOS_CLASS_TO_BACKEND,
+            generate_report=lambda *args, **kwargs: "# report",
+        )
+
+    def test_skips_not_finished(self, monkeypatch, tmp_path):
+        """A still-running node yields a skip (not a crash)."""
+        status = self._call(monkeypatch, tmp_path, (None, "running"), "not_finished")
+        assert status.startswith("skipped:")
+        assert "not finished" in status
+        assert not (tmp_path / "report.md").exists()
+
+    def test_skips_failed_exit_status(self, monkeypatch, tmp_path):
+        """A finished WorkChain with a non-zero exit status (e.g. an EOS
+        run whose SCF child failed) is ignored — no report is written."""
+
+        class FakeWorkchain:
+            process_class = type("FleurEosWorkChain", (), {"__name__": "FleurEosWorkChain"})
+            is_finished_ok = False
+            exit_status = 300
+
+        status = self._call(monkeypatch, tmp_path, FakeWorkchain(), "ok")
+        assert status.startswith("skipped:")
+        assert "exit_status=300" in status
+        assert not (tmp_path / "report.md").exists()
+
+    def test_ok_writes_report(self, monkeypatch, tmp_path):
+        """A finished, successful WorkChain still produces a report."""
+        from types import SimpleNamespace
+
+        class FakeOutputs:
+            def __init__(self, para):
+                self.output_parameters = para
+
+        class FakeWorkchain:
+            process_class = type("FleurEosWorkChain", (), {"__name__": "FleurEosWorkChain"})
+            is_finished_ok = True
+            exit_status = 0
+            outputs = FakeOutputs(
+                SimpleNamespace(get_dict=lambda: {"volume_gs": 41.0})
+            )
+
+        status = self._call(monkeypatch, tmp_path, FakeWorkchain(), "ok")
+        assert status.startswith("ok ->")
+        assert (tmp_path / "report.md").read_text() == "# report"

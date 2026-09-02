@@ -21,7 +21,7 @@ class AbacusAdapter(SoftwareAdapter):
     name = "abacus"
 
     def _workchain_entry_point(self) -> str:
-        return "abacus.smear"
+        return "uranium.smear.abacus"
 
     def _build_workchain_inputs(self, structure) -> dict[str, Any]:
         from aiida import orm

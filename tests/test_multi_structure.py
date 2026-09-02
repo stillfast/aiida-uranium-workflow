@@ -38,11 +38,14 @@ class _RecordingAdapter:
 
     instances: List[Tuple[str, int, Any]] = []
 
-    def __init__(self, code_label, software_params, metadata, workflow_data) -> None:
+    def __init__(
+        self, code_label, software_params, metadata, workflow_data, *, extra_codes=None
+    ) -> None:
         self.code_label = code_label
         self.software_params = software_params
         self.metadata = metadata
         self.workflow_data = workflow_data
+        self.extra_codes = dict(extra_codes or {})
 
     @classmethod
     def reset(cls) -> None:

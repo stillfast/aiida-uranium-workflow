@@ -53,7 +53,6 @@ from aiida_uranium_workflow.utils.report.smear import (
     generate_wall_time_table as generate_smear_wall_time_table,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -342,3 +341,296 @@ class TestMagmomReportHasThreeTables:
         assert "| 1 | 0 |" in report  # status row
         assert "-123.450000" in report  # energy row
         assert "12.500" in report  # time row
+
+
+# ---------------------------------------------------------------------------
+# Magmom — FLEUR integration (per-atom 3-vectors, Hartree energies)
+# ---------------------------------------------------------------------------
+
+
+FLEUR_MAGMOM = {
+    "magnetization": {
+        101: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],  # NM
+        102: [[0.0, 0.0, 4.0], [0.0, 0.0, 4.0]],  # FM
+        103: [[0.0, 0.0, 4.0], [0.0, 0.0, -4.0]],  # AFM
+    },
+    "total_energy_hartree": {101: -56165.979, 102: -56165.999, 103: -56165.955},
+    "final_energy": {101: -1528536.0, 102: -1528536.5, 103: -1528535.8},
+    "wall_time_seconds": {101: 900.0, 102: 950.0, 103: 920.0},
+    "status": {101: 0, 102: 0, 103: 0},
+    "config_labels": {101: "NM", 102: "FM", 103: "AFM"},
+    "magmom_list": [
+        {"label": "NM", "bmu": 0.0},
+        {
+            "label": "FM",
+            "bmu": 4.0,
+            "inpxml_changes": [["set_species", {"species_name": "all"}]],
+        },
+        {
+            "label": "AFM",
+            "bmu": 4.0,
+            "inpxml_changes": [["set_species", {}], ["set_atomgroup", {"position": 2}]],
+        },
+    ],
+}
+
+
+class TestFleurMagmomReport:
+    def test_summary_shows_fleur_backend(self) -> None:
+        report = generate_magmom_report(FLEUR_MAGMOM, pk=7, workflow_type="fleur")
+        assert "| backend | fleur |" in report
+        assert "| magnetization entries | 3 |" in report
+        assert "| total_energy_hartree entries | 3 |" in report
+
+    def test_magnetism_matrix_per_atom_and_total(self) -> None:
+        report = generate_magmom_report(FLEUR_MAGMOM, pk=7, workflow_type="fleur")
+        assert "## Magnetism Matrix" in report
+        # FM row: per-atom +z, cell total +z 8.0 (matrix table).
+        assert "[+0.00, +0.00, +4.00]" in report
+        assert "[+0.00, +0.00, +8.00]" in report
+        # AFM row: moments cancel -> cell total 0, per-atom +4 / -4.
+        assert "[+0.00, +0.00, -4.00]" in report
+
+    def test_delta_energy_mev_column(self) -> None:
+        report = generate_magmom_report(FLEUR_MAGMOM, pk=7, workflow_type="fleur")
+        # FM is 0.020 Ha below the NM reference -> -544 meV (Ha -> meV).
+        assert "| -544.228 |" in report
+        # AFM is 0.024 Ha above -> +653 meV.
+        assert "| +653.073 |" in report
+
+    def test_initial_magmom_bmu(self) -> None:
+        report = generate_magmom_report(FLEUR_MAGMOM, pk=7, workflow_type="fleur")
+        # FLEUR bmu seeds render in the M_start columns (scalar +0.00 / +4.00).
+        assert "| +0.00 | +0.00 |" in report  # NM row M_start_U1/U2
+        assert "| +4.00 | +4.00 |" in report  # FM row M_start_U1/U2
+        # The inpxml_changes payload must not leak into the report.
+        assert "set_species" not in report
+
+    def test_matrix_table_fleur_cell_total(self) -> None:
+        report = generate_magmom_report(FLEUR_MAGMOM, pk=7, workflow_type="fleur")
+        # Matrix table: FM cell total [0, 0, 8].
+        assert "[+0.00, +0.00, +8.00]" in report
+
+
+# ---------------------------------------------------------------------------
+# Relax — FLEUR EOS + ABACUS volume-only reports
+# ---------------------------------------------------------------------------
+
+
+class TestRelaxReport:
+    def test_fleur_full_relax_report(self) -> None:
+        from aiida_uranium_workflow.utils.report.relax import generate_report
+
+        out = {
+            "workflow": "relax",
+            "backend": "fleur",
+            "mode": "full-relax",
+            "lattice_constants": [3.4581, 3.4581, 3.4581],
+            "lattice_constant": 3.4581,
+            "volume": 25.83,
+            "energy": -1528353.919388,
+            "energy_units": "eV",
+            "relax_energy_hartree": -56165.97,
+        }
+        report = generate_report(out, pk=7, workflow_type="fleur")
+        assert "mode | full relax (positions + cell)" in report
+        assert "[3.458100, 3.458100, 3.458100] Å" in report
+        assert "-1528353.919388 eV" in report
+        assert "## EOS Volume Scan" not in report
+
+    def test_abacus_volume_report(self) -> None:
+        from aiida_uranium_workflow.utils.report.relax import generate_report
+
+        out = {
+            "workflow": "relax",
+            "backend": "abacus",
+            "mode": "volume",
+            "lattice_constants": [3.4581, 3.4581, 3.4581],
+            "lattice_constant": 3.4581,
+            "volume": 25.83,
+            "energy": -1528353.919388,
+            "energy_units": "eV",
+        }
+        report = generate_report(out, pk=8, workflow_type="abacus")
+        assert "mode | volume-only relax" in report
+        assert "[3.458100, 3.458100, 3.458100] Å" in report
+        assert "-1528353.919388 eV" in report
+        assert "## EOS Volume Scan" not in report
+
+
+class TestRelaxDeriveFromNode:
+    """_derive_from_node must respect the plugin's ``energy_units``."""
+
+    @staticmethod
+    def _node(outputs):
+        class _Outs:
+            pass
+
+        outs = _Outs()
+        for k, v in outputs.items():
+            setattr(outs, k, v)
+        node = type("Node", (), {"outputs": outs})()
+        return node
+
+    @staticmethod
+    def _structure():
+        import numpy as np
+        from ase.build import bulk
+
+        cell = np.asarray(bulk("U", "bcc", a=3.45).cell)
+
+        def _vol(self):
+            return float(np.linalg.det(cell))
+
+        return type("Struct", (), {
+            "cell": cell,
+            "get_cell_volume": _vol,
+        })()
+
+    def _fleur_node(self, energy, units):
+        def _get_dict(self):
+            return {"last_energy": energy, "energy_units": units}
+
+        para = type("P", (), {"get_dict": _get_dict})()
+        return self._node({"optimized_structure": self._structure(),
+                           "output_relax_wc_para": para})
+
+    def test_fleur_eV_not_rescaled(self):
+        from aiida_uranium_workflow.utils.report.relax import _derive_from_node
+        data = _derive_from_node(self._fleur_node(-1528354.014, "eV"), "fleur")
+        # aiida-fleur already converted Ha → eV; do NOT multiply again.
+        assert data["energy"] == pytest.approx(-1528354.014, abs=1e-6)
+
+    def test_fleur_last_energy_used_as_ev_regardless_of_units(self):
+        # aiida-fleur 2.0.0's ``last_energy`` is already an eV numerical
+        # value (bcc-U 2 atoms ≈ -1 528 354 eV, matching the EOS report);
+        # the ``energy_units`` label is unreliable — always use as eV.
+        from aiida_uranium_workflow.utils.report.relax import _derive_from_node
+        data = _derive_from_node(self._fleur_node(-1528354.014, "Htr"), "fleur")
+        assert data["energy"] == pytest.approx(-1528354.014, abs=1e-6)
+
+    def test_lattice_and_volume_derived(self):
+        import numpy as np
+        from ase.build import bulk
+        from aiida_uranium_workflow.utils.report.relax import _derive_from_node
+
+        cell = np.asarray(bulk("U", "bcc", a=3.45).cell)
+        data = _derive_from_node(self._fleur_node(-1.0, "eV"), "fleur")
+        assert data["lattice_constant"] == pytest.approx(
+            float(np.linalg.norm(cell[0])), abs=1e-6)
+        assert data["volume"] == pytest.approx(
+            float(np.linalg.det(cell)), abs=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Magmom — Magnetism Matrix table (compact per-configuration format)
+# ---------------------------------------------------------------------------
+
+
+class TestMagmomMatrixTable:
+    """The compact pk-keyed magnetism matrix table."""
+
+    def test_vasp_matrix(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # VASP: magnetization is the cell total (vector for SOC / scalar
+        # for nosoc); site_magnetization holds per-site moments when parsed.
+        params = {
+            "final_energy": {342714: -27.26117914, 342720: -27.26441465},
+            "magnetization": {342714: [0.0, 0.0, 0.0], 342720: [0.0, 0.0, 2.09678]},
+            "site_magnetization": {
+                342714: {"sphere": {"x": {"site_moment": {}}}, "full_cell": [0.0]},
+                342720: {"sphere": {"x": {"site_moment": {}}}, "full_cell": [2.1]},
+            },
+            "magmom_list": [
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                [[0.0, 0.0, 4.0], [0.0, 0.0, 4.0]],
+            ],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="vasp")
+        # E in eV; cell total from magnetization.
+        assert "| 342714 | -27.26117914 | +0.000 |" in table
+        assert "[+0.00, +0.00, +2.10]" in table
+        # No per-site moments parsed -> M_U final columns hidden entirely.
+        assert "M_U1 (µ_B)" not in table
+        assert "| — | — |" not in table
+        # Per-atom initial magmom (magmom_per_atom_list injected as magmom_list).
+        assert "| [+0.00, +0.00, +0.00] | [+0.00, +0.00, +0.00] |" in table
+        assert "| [+0.00, +0.00, +4.00] | [+0.00, +0.00, +4.00] |" in table
+
+    def test_vasp_matrix_with_site_moments(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # When VASP per-site moments are parsed, the M_U columns appear.
+        params = {
+            "final_energy": {1: -100.0, 2: -99.5},
+            "magnetization": {1: [0.0, 0.0, 0.0], 2: [0.0, 0.0, 4.0]},
+            "site_magnetization": {
+                1: {"sphere": {"x": {"site_moment": {"0": 0.0, "1": 0.0}}}},
+                2: {"sphere": {"x": {"site_moment": {"0": 2.0, "1": 2.0}}}},
+            },
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="vasp")
+        assert "M_U1 (µ_B) | M_U2 (µ_B)" in table
+        assert (
+            "| 2 | -99.50000000 | +500.000 | [+0.00, +0.00, +4.00] | +2.00 | +2.00 |"
+            in table
+        )
+
+    def test_abacus_nosoc_scalar_cell(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # nosoc (collinear) ABACUS: cell total is a scalar, not a vector.
+        params = {
+            "final_energy": {1: -100.0, 2: -99.5},
+            "final_magnetism": {1: 0.0, 2: 2.65},
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        assert "| 1 | -100.00000000 | +0.000 | +0.00 |" in table
+        assert "| 2 | -99.50000000 | +500.000 | +2.65 |" in table
+
+    def test_abacus_matrix(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        params = {
+            "final_energy": {342670: -27051.032119701, 342678: -27051.031759607},
+            "final_magnetism": {
+                342670: {"total_magnetism": [0.0, 0.0, 5.49e-06]},
+                342678: {"total_magnetism": [0.0, 0.0, 0.543068531506]},
+            },
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        # Row keys are the pks; NM (first entry, zero magmom) is the reference.
+        assert "| 342670 | -27051.03211970 | +0.000 |" in table
+        assert "| 342678 | -27051.03175961 | +0.360 |" in table
+        # ABACUS has no per-atom final moments -> M_U final columns are
+        # hidden entirely (M_cell is the only magnetism output).
+        assert "M_U1 (µ_B)" not in table
+        assert "| — | — |" not in table
+        # M_start columns remain (from the injected magmom_list).
+        assert "M_start_U1 (µ_B) | M_start_U2 (µ_B)" in table
+
+    def test_fleur_matrix(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        table = generate_magmom_matrix_table(FLEUR_MAGMOM, workflow_type="fleur")
+        # E in Hartree; per-atom final vectors present; cell total is the sum.
+        assert "| 101 | -56165.97900000 | +0.000 |" in table
+        assert "[+0.00, +0.00, +4.00]" in table  # M_U1 FM
+        assert "[+0.00, +0.00, +8.00]" in table  # M_cell FM
+        assert "[+0.00, +0.00, -4.00]" in table  # M_U2 AFM
+        assert "M_start_U1 (µ_B)" in table
+        assert "| +4.00 | +4.00 |" in table  # bmu seeds

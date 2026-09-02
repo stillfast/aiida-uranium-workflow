@@ -8,7 +8,7 @@ section (e.g. ``parameters/magmom.yml``) and assembles inputs for
 from __future__ import annotations
 
 from ..base import SoftwareAdapter
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 class VaspMagmomAdapter(SoftwareAdapter):
@@ -17,7 +17,7 @@ class VaspMagmomAdapter(SoftwareAdapter):
     name = "vasp"
 
     def _workchain_entry_point(self) -> str:
-        return "vasp.magmom"
+        return "uranium.magmom.vasp"
 
     def _build_workchain_inputs(self, structure) -> dict[str, Any]:
         from aiida import orm
@@ -48,15 +48,21 @@ class VaspMagmomAdapter(SoftwareAdapter):
             inputs["kpoints"] = kpoints_mesh
         return inputs
 
-    def _prepare_workflow_inputs(self) -> List[Dict[str, Any]]:
-        """Extract the ``magmom_mapping_list`` from workflow_data.
+    def _prepare_workflow_inputs(self) -> dict[str, list]:
+        """Extract the vasp magmom lists from workflow_data.
 
-        Each entry is a dict like ``{"Si": 1.0}`` or ``{"U": [1.0, -1.0]}``.
+        Returns ``{"magmom_mapping_list": [...], "magmom_per_atom_list": [...]}``.
+        ``magmom_mapping_list`` entries are per-species dicts like
+        ``{"Si": 1.0}`` / ``{"U": [1.0, -1.0]}``; ``magmom_per_atom_list``
+        entries are per-site lists like ``[0.0, 0.0]`` / ``[4.0, -4.0]``.
         """
         lists = self.workflow_data.get("magmom_lists", {}).get("vasp", {})
         if not lists:
-            return []
-        return list(lists.get("magmom_mapping_list", []))
+            return {}
+        return {
+            "magmom_mapping_list": list(lists.get("magmom_mapping_list", [])),
+            "magmom_per_atom_list": list(lists.get("magmom_per_atom_list", [])),
+        }
 
     def adapt(self, structure):
         """Compose the final AiiDA inputs + workchain class."""
@@ -64,10 +70,17 @@ class VaspMagmomAdapter(SoftwareAdapter):
         from aiida.plugins import WorkflowFactory
 
         options = self.metadata.get("options", {})
-        magmom_mapping_list = self._prepare_workflow_inputs()
+        magmom_lists = self._prepare_workflow_inputs()
 
         inputs = self._build_workchain_inputs(structure)
-        if magmom_mapping_list:
+        magmom_mapping_list = magmom_lists.get("magmom_mapping_list") or []
+        magmom_per_atom_list = magmom_lists.get("magmom_per_atom_list") or []
+        if magmom_per_atom_list:
+            # Per-atom (site-order) initial moments: use the
+            # ``magmom_per_atom_list`` port (aiida-vasp's
+            # ``magmom_per_atom`` takes precedence over ``magmom_mapping``).
+            inputs["magmom_per_atom_list"] = orm.List(list=magmom_per_atom_list)
+        elif magmom_mapping_list:
             inputs["magmom_list"] = orm.List(list=magmom_mapping_list)
 
         self._inject_options(inputs, options)

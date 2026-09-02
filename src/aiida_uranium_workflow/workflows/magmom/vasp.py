@@ -9,12 +9,19 @@ ChildWorkChain = WorkflowFactory("vasp.v2.vasp")
 
 
 class VaspMagmomWorkChain(WorkChain):
-    """Sweep over a list of ``magmom_mapping`` values and gather the
+    """Sweep over a list of initial magnetic configurations and gather the
     resulting magnetism outputs.
 
-    For each entry in ``magmom_list`` (a ``dict`` like ``{"Si": 1.0}`` or
-    ``{"Si": [1.0, -1.0]}``), one child VaspWorkChain is submitted with that
-    ``magmom_mapping`` set on its inputs.
+    Two mutually-exclusive input styles are supported:
+
+    * ``magmom_list`` — one entry per child is a per-species mapping dict
+      (``{"Si": 1.0}`` / ``{"Si": [1.0, -1.0]}``); passed to the child
+      ``VaspWorkChain`` via its ``magmom_mapping`` port.
+    * ``magmom_per_atom_list`` — one entry per child is a per-atom list of
+      initial magnetic moments in site order (``[0.0, 0.0]`` /
+      ``[4.0, -4.0]``); passed to the child ``VaspWorkChain`` via its
+      ``magmom_per_atom`` port (which takes precedence over
+      ``magmom_mapping`` inside aiida-vasp).
 
     Outline:  submit_children → gather_results
 
@@ -46,10 +53,26 @@ class VaspMagmomWorkChain(WorkChain):
         spec.input(
             "magmom_list",
             valid_type=orm.List,
+            required=False,
             help=(
                 "List of ``magmom_mapping`` dictionaries, one per child "
                 "calculation. Each entry maps element symbol to its "
                 "magnetization, e.g. {'Si': 1.0} or {'Si': [1.0, -1.0]}."
+                "Mutually exclusive with ``magmom_per_atom_list``."
+            ),
+        )
+        spec.input(
+            "magmom_per_atom_list",
+            valid_type=orm.List,
+            required=False,
+            help=(
+                "List of per-atom initial magnetic moments, one entry per "
+                "child calculation. Each entry is a list in site order, "
+                "e.g. [0.0, 0.0] or [4.0, -4.0] (collinear) / "
+                "[ [1.0,0.0,0.0], ... ] (non-collinear, 3 components per "
+                "site). Passed to the child VaspWorkChain's "
+                "``magmom_per_atom`` port. Mutually exclusive with "
+                "``magmom_list``."
             ),
         )
 
@@ -64,18 +87,34 @@ class VaspMagmomWorkChain(WorkChain):
         spec.exit_code(300, "ERROR_CHILD", "A child calculation failed.")
         spec.exit_code(305, "ERROR_PARSER", "Failed to parse magnetism.")
 
+    def _magmom_entries(self):
+        """Return ``(kind, entries)`` for the supplied magnetic configs.
+
+        ``kind`` is ``"mapping"`` (per-species dicts) or ``"per_atom"``
+        (per-site lists), depending on which input port was provided.
+        """
+        if "magmom_per_atom_list" in self.inputs:
+            return "per_atom", self.inputs.magmom_per_atom_list.get_list()
+        return "mapping", self.inputs.magmom_list.get_list()
+
     def submit_children(self):
-        """Submit one child VaspWorkChain per ``magmom_mapping`` entry."""
-        magmom_list = self.inputs.magmom_list.get_list()
+        """Submit one child VaspWorkChain per magmom configuration."""
+        kind, magmom_entries = self._magmom_entries()
 
         base_inputs = self.exposed_inputs(ChildWorkChain, agglomerate=True)
 
-        for idx, mag_value in enumerate(magmom_list):
+        for idx, mag_value in enumerate(magmom_entries):
             mag_label = _magmom_to_label(mag_value)
             label = f"magmom_{idx:03d}_{mag_label}"
 
             child_inputs = dict(base_inputs)
-            child_inputs["magmom_mapping"] = orm.Dict(mag_value)
+            if kind == "per_atom":
+                # aiida-vasp v2 ``VaspWorkChain.magmom_per_atom`` port:
+                # one initial moment per site (scalar, or 3-vector for
+                # non-collinear); takes precedence over magmom_mapping.
+                child_inputs["magmom_per_atom"] = orm.List(list=mag_value)
+            else:
+                child_inputs["magmom_mapping"] = orm.Dict(mag_value)
             child_inputs["metadata"] = {"label": label}
             child_inputs["calc"] = {
                 **base_inputs.get("calc", {}),
@@ -95,12 +134,12 @@ class VaspMagmomWorkChain(WorkChain):
             self.to_context(**{label: running})
 
     def gather_results(self):
-        magmom_list = self.inputs.magmom_list.get_list()
+        _, magmom_entries = self._magmom_entries()
 
         all_finished_ok = True
         child_pks = []
 
-        for idx, mag_value in enumerate(magmom_list):
+        for idx, mag_value in enumerate(magmom_entries):
             mag_label = _magmom_to_label(mag_value)
             label = f"magmom_{idx:03d}_{mag_label}"
             child = getattr(self.ctx, label, None)
@@ -179,12 +218,26 @@ def parse_and_gather_magmom_results(child_pks):
 
 
 def _magmom_to_label(mag_value):
-    """Render a ``magmom_mapping`` dict as a filesystem-friendly label."""
+    """Render a magmom configuration as a filesystem-friendly label.
+
+    Accepts a per-species mapping dict (``{"U": 4.0}`` /
+    ``{"U": [1.0, -1.0]}``) or a per-atom list (``[4.0, -4.0]`` /
+    ``[[1.0, 0.0, 0.0], ...]``).
+    """
     parts = []
-    for element, value in mag_value.items():
-        if isinstance(value, (list, tuple)):
-            v = "_".join(f"{float(x):g}" for x in value)
-        else:
-            v = f"{float(value):g}"
-        parts.append(f"{element}_{v}")
-    return "__".join(parts).replace(".", "_").replace("-", "m")
+    if isinstance(mag_value, dict):
+        for element, value in mag_value.items():
+            if isinstance(value, (list, tuple)):
+                v = "_".join(f"{float(x):g}" for x in value)
+            else:
+                v = f"{float(value):g}"
+            parts.append(f"{element}_{v}")
+        body = "__".join(parts)
+    else:  # per-atom list: scalar per site, or 3-vector per site
+        for x in mag_value:
+            if isinstance(x, (list, tuple)):
+                parts.append("_".join(f"{float(v):g}" for v in x))
+            else:
+                parts.append(f"{float(x):g}")
+        body = "_".join(parts)
+    return body.replace(".", "_").replace("-", "m")

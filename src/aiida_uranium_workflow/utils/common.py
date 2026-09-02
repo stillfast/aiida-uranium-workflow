@@ -8,7 +8,7 @@ AiiDA-coupled types (``AdaptedInputs``, ``SoftwareAdapter``) live in
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,11 @@ class ParamBundle:
       * ``software_params`` — backend → list of loaded YAML entries (one per
         requested preset, see :func:`ConfigLoader._load_all_software_params`).
       * ``metadata``        — ``static/metadata.yml`` entry.
+      * ``workflow_presets`` / ``workflow_data_map`` — when
+        ``parameters[<workflow_key>]`` is a *list* of protocol preset names,
+        one WorkChain is submitted per preset, each with its own parsed
+        ``workflow_data`` (``workflow_data_map[preset]``). Empty for the
+        single-preset / protocol-free layouts.
     """
 
     input_params: dict[str, Any]
@@ -46,3 +51,5 @@ class ParamBundle:
     workflow_data: dict[str, Any]
     software_params: dict[str, list[dict[str, Any]]]
     metadata: dict[str, Any]
+    workflow_presets: list[str] = field(default_factory=list)
+    workflow_data_map: dict[str, dict[str, Any]] = field(default_factory=dict)

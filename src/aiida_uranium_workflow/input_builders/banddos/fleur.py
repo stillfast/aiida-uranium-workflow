@@ -4,14 +4,17 @@ Translates a :class:`ParamBundle` into the ``inputs`` dict expected by
 :class:`aiida_uranium_workflow.workflows.banddos.FleurBandAndDosWorkChain`.
 
 The bundle's ``software_params['fleur'][preset_idx]`` is taken from
-``parameters/fleur/banddos.yml`` and is expected to be a flat dict with
+``parameters/fleur/scf.yml`` and is expected to be a flat dict with
 these top-level keys (see :mod:`parameters.fleur.banddos`):
 
 * ``wf_parameters``   — FLEUR ``FleurBaseWorkChain`` settings
                         (``mode='density'``, convergence criteria, …)
 * ``calc_parameters`` — FLEUR input parameters (kmax / kpt / atom)
-* ``band_wf``         — band-mode ``wf_parameters`` for the band child
-* ``dos_wf``          — DOS-mode ``wf_parameters`` for the DOS child
+
+The band / DOS overrides (``band_wf`` / ``dos_wf``) come from the
+**workflow protocol** (``parameters/banddos.yml``'s ``fleur`` block) —
+the same single-source layout as magmom; the preset only provides the
+SCF base. A missing protocol ``fleur`` block raises an error.
 
 The adapter passes everything through to the new
 ``FleurBandAndDosWorkChain``, which itself submits two child
@@ -42,6 +45,21 @@ class FleurBandAdapter(SoftwareAdapter):
             raise ValueError(
                 "FLEUR banddos preset is missing 'wf_parameters' or "
                 "'calc_parameters' — the SCF namespace can't be built."
+            )
+
+        # The band / DOS ``wf_parameters`` overrides come from the
+        # workflow protocol (``parameters/banddos.yml``'s ``fleur``
+        # block), not from the preset — same single-source layout as
+        # magmom. The preset only carries the SCF base. Check first so
+        # a missing block fails before any AiiDA node is created.
+        fleur_block = dict(self.workflow_data.get("fleur", {}))
+        band_wf = fleur_block.get("band_wf")
+        dos_wf = fleur_block.get("dos_wf")
+        if not band_wf or not dos_wf:
+            raise ValueError(
+                "FLEUR banddos needs 'fleur.band_wf' / 'fleur.dos_wf' in "
+                "the workflow protocol (parameters/banddos.yml, e.g. under "
+                "'tdos') — the preset only provides the SCF base."
             )
 
         options = self.metadata.get("options", {})
@@ -82,13 +100,13 @@ class FleurBandAdapter(SoftwareAdapter):
             "fleur":     orm.load_code(code_label),
             "options":   orm.Dict(dict=options) if options else orm.Dict(dict={}),
             "scf":       scf,
-            "band_wf":   orm.Dict(dict=dict(preset.get("band_wf", {}))),
-            "dos_wf":    orm.Dict(dict=dict(preset.get("dos_wf", {}))),
+            "band_wf":   orm.Dict(dict=dict(band_wf)),
+            "dos_wf":    orm.Dict(dict=dict(dos_wf)),
         }
 
     def _prepare_workflow_inputs(self):
         # Unused for banddos — the per-run overrides are read directly
-        # from the YAML preset's ``band_wf`` / ``dos_wf`` keys in
+        # from the workflow protocol's ``fleur`` block in
         # :meth:`_build_workchain_inputs`.
         return [], []
 

@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aiida-uranium-workflow"
 version = "0.1.0"
-description = "AiiDA workflows for uranium calculations (smear test for ABACUS/VASP)"
+description = "AiiDA workflow orchestration for uranium calculations across ABACUS / VASP / FLEUR (smear, convergence, magmom, banddos, relax, elastic, EOS, phonopy)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
   { name = "liguozhou" },
 ]
-keywords = ["aiida", "plugin", "abacus", "vasp", "uranium", "smear"]
+keywords = ["aiida", "plugin", "abacus", "vasp", "fleur", "uranium", "workflow", "banddos", "elastic", "relax"]
 classifiers = [
   "Framework :: AiiDA",
   "Programming Language :: Python :: 3",
@@ -26,9 +26,13 @@ dependencies = [
   "aiida-core>=2.0",
   "aiida-abacus>=0.1",
   "aiida-vasp>=5.0",
+  "aiida-fleur>=2.0",      # PyPI latest is 2.0.0 (>=3.0 does not exist)
+  "aiida-phonopy>=1.0",
   "ase>=3.22",
   "pyyaml>=6.0",
   "pyxtal>=1.0",
+  "pymatgen>=2023.0",
+  "seekpath>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -45,14 +49,38 @@ dev = [
 
 [project.scripts]
 aiida-uranium = "aiida_uranium_workflow.cli.main:main"
+aiida-uranium-plot-banddos = "aiida_uranium_workflow.cli.plot.plot_banddos:main"
+aiida-uranium-plot-phonon = "aiida_uranium_workflow.cli.plot.plot_phonon:main"
 
+# ---------------------------------------------------------------------------
+# AiiDA workflow entry points.
+#
+# All workflows defined in this package live under the ``uranium.*``
+# namespace (``uranium.<method>.<backend>``) so they can never collide
+# with the plugin entry points they wrap (``abacus.*`` / ``vasp.*`` /
+# ``fleur.*``). The relax methods have no custom WorkChain — they call
+# the plugin relax WorkChains directly (``abacus.relax`` / ``fleur.relax``)
+# from the input builders, so nothing is registered here for them.
+# ---------------------------------------------------------------------------
 [project.entry-points."aiida.workflows"]
-"abacus.smear" = "aiida_uranium_workflow.workflows.smear.abacus:AbacusSmearWorkChain"
-"vasp.smear" = "aiida_uranium_workflow.workflows.smear.vasp:VaspSmearWorkChain"
-"abacus.convergence" = "aiida_uranium_workflow.workflows.convergence.abacus:AbacusConvergenceWorkChain"
-"vasp.convergence" = "aiida_uranium_workflow.workflows.convergence.vasp:VaspConvergenceWorkChain"
-"abacus.magmom" = "aiida_uranium_workflow.workflows.magmom.abacus:AbacusMagmomWorkChain"
-"vasp.magmom" = "aiida_uranium_workflow.workflows.magmom.vasp:VaspMagmomWorkChain"
+"uranium.smear.abacus" = "aiida_uranium_workflow.workflows.smear.abacus:AbacusSmearWorkChain"
+"uranium.smear.vasp" = "aiida_uranium_workflow.workflows.smear.vasp:VaspSmearWorkChain"
+"uranium.convergence.abacus" = "aiida_uranium_workflow.workflows.convergence.abacus:AbacusConvergenceWorkChain"
+"uranium.convergence.vasp" = "aiida_uranium_workflow.workflows.convergence.vasp:VaspConvergenceWorkChain"
+"uranium.magmom.abacus" = "aiida_uranium_workflow.workflows.magmom.abacus:AbacusMagmomWorkChain"
+"uranium.magmom.vasp" = "aiida_uranium_workflow.workflows.magmom.vasp:VaspMagmomWorkChain"
+"uranium.magmom.fleur" = "aiida_uranium_workflow.workflows.magmom.fleur:FleurMagmomWorkChain"
+"uranium.magmom.qe" = "aiida_uranium_workflow.workflows.magmom.qe:QeMagmomWorkChain"
+"uranium.banddos.fleur" = "aiida_uranium_workflow.workflows.banddos.fleur:FleurBandAndDosWorkChain"
+"uranium.elastic.abacus" = "aiida_uranium_workflow.workflows.elastic.abacus:AbacusElasticWorkChain"
+"uranium.elastic.vasp" = "aiida_uranium_workflow.workflows.elastic.vasp:VaspElasticWorkChain"
+"uranium.elastic.fleur" = "aiida_uranium_workflow.workflows.elastic.fleur:FleurElasticWorkChain"
+"uranium.phonopy.abacus" = "aiida_uranium_workflow.workflows.phonopy.abacus:AbacusPhonopyWorkChain"
+"uranium.phonopy.fleur" = "aiida_uranium_workflow.workflows.phonopy.fleur:FleurPhonopyWorkChain"
+"uranium.eos.abacus" = "aiida_uranium_workflow.workflows.eos.abacus:AbacusEosWorkChain"
+"uranium.defects.abacus" = "aiida_uranium_workflow.workflows.defects.abacus:AbacusDefectsWorkChain"
+"uranium.defects.fleur" = "aiida_uranium_workflow.workflows.defects.fleur:FleurDefectsWorkChain"
+"uranium.supercell.abacus" = "aiida_uranium_workflow.workflows.supercell.abacus:SupercellScfWorkChain"
 
 [project.urls]
 Source = "https://github.com/liguozhou/aiida-uranium-workflow"

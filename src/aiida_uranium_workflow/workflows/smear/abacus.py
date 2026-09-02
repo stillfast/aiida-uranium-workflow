@@ -36,6 +36,7 @@ from aiida import orm
 from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
+from aiida_uranium_workflow.utils.labels import format_smear_label
 
 ChildWorkChain = WorkflowFactory("abacus.base")
 
@@ -134,7 +135,7 @@ class AbacusSmearWorkChain(WorkChain):
                 )
                 continue
 
-            label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+            label = format_smear_label(smear, sigma)
 
             param_dict = abacus_block.parameters.get_dict()
             param_dict.setdefault("input", {})["smearing_method"] = smear
@@ -183,7 +184,7 @@ class AbacusSmearWorkChain(WorkChain):
         child_pks = []
 
         for smear, sigma in product(smear_list, sigma_list):
-            label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+            label = format_smear_label(smear, sigma)
             child = getattr(self.ctx, label, None)
 
             if child is None:
@@ -225,7 +226,7 @@ def parse_and_gather_smear_results(child_pks):
         input_block = param_dict.get("input", {})
         smear = input_block.get("smearing_method")
         sigma = input_block.get("smearing_sigma")
-        label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+        label = format_smear_label(smear, sigma)
 
         # Capture exit status for every submitted child, even those
         # that did not finish OK — the report needs to surface

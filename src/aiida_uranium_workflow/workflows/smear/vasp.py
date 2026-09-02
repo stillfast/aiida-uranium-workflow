@@ -6,6 +6,7 @@ from aiida.plugins import WorkflowFactory
 from itertools import product
 
 import xml.etree.ElementTree as ET
+from aiida_uranium_workflow.utils.labels import format_smear_label
 
 ChildWorkChain = WorkflowFactory("vasp.v2.vasp")
 
@@ -65,7 +66,7 @@ class VaspSmearWorkChain(WorkChain):
             base_calc_meta = {}
 
         for smear, sigma in planned:
-            label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+            label = format_smear_label(smear, sigma)
 
             param_dict = base_inputs.parameters.get_dict()
             incar = param_dict.setdefault("incar", {})
@@ -96,7 +97,7 @@ class VaspSmearWorkChain(WorkChain):
         child_pks = []
 
         for smear, sigma in product(smear_list, sigma_list):
-            label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+            label = format_smear_label(smear, sigma)
             child = getattr(self.ctx, label, None)
 
             if child is None:
@@ -137,7 +138,7 @@ def parse_and_gather_smear_results(child_pks):
         incar = child.inputs.parameters.get_dict().get("incar", {})
         smear = incar.get("ismear")
         sigma = incar.get("sigma")
-        label = f"smear_{smear}_sigma_{sigma}".replace(".", "_")
+        label = format_smear_label(smear, sigma)
 
         # Capture exit status for every submitted child, even those
         # that did not finish OK — the report needs to surface

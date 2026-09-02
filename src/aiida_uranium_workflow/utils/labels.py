@@ -101,6 +101,24 @@ def _decimal_token_short(value: float | int) -> str:
     return text.replace(".", "_").replace("-", "m")
 
 
+def format_smear_label(method: str, sigma: float | int) -> str:
+    """Canonical *workflow* smear label — ``smear_<method>_sigma_<v>``.
+
+    Single source of truth for the labels the smear WorkChains assign
+    to their children (and the keys of their ``output_parameters``):
+    ABACUS passes ``smearing_method`` (e.g. ``"mp"``), VASP passes the
+    integer ``ismear`` — both share this format. The sigma token keeps
+    the full ``f"{sigma}"`` precision (matching the historical
+    workflow labels), with ``.`` → ``_``.
+
+    Note: this differs from the ``copy``-command labels
+    (:func:`format_abacus_smear_label` / :func:`format_vasp_smear_label`,
+    ``smearing_*`` / ``ismear_*`` with ``%.6f``-rounded sigma) — those
+    are used for remote-folder directory names.
+    """
+    return f"smear_{method}_sigma_{_decimal_token_short(sigma)}"
+
+
 def format_abacus_smear_label(method: str, sigma: float | int) -> str:
     """``smearing_<method>_sigma_<value>``."""
     return f"smearing_{method}_sigma_{_sanitise_decimal(sigma)}"

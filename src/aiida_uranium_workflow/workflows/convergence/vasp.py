@@ -5,7 +5,7 @@ from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
 
-import xml.etree.ElementTree as ET
+from aiida_uranium_workflow.utils.labels import format_vasp_convergence_label
 
 ChildWorkChain = WorkflowFactory("vasp.v2.vasp")
 
@@ -95,10 +95,9 @@ class VaspConvergenceWorkChain(WorkChain):
 
         for kpoints_val, encut in planned:
             if use_kpoints_spacing:
-                label = f"kpoints_spacing_{kpoints_val}_encut_{encut}".replace(".", "_")
+                label = format_vasp_convergence_label(kpoints_val, encut)
             else:
-                kpoints_str = "x".join(str(k) for k in kpoints_val)
-                label = f"kpoints_{kpoints_str}_encut_{encut}".replace(".", "_")
+                label = format_vasp_convergence_label(kpoints_val, encut)
 
             param_dict = base_inputs.parameters.get_dict()
             incar = param_dict.setdefault("incar", {})
@@ -148,10 +147,9 @@ class VaspConvergenceWorkChain(WorkChain):
 
         for kpoints_val, encut in product(kpoints_values, encut_list):
             if use_kpoints_spacing:
-                label = f"kpoints_spacing_{kpoints_val}_encut_{encut}".replace(".", "_")
+                label = format_vasp_convergence_label(kpoints_val, encut)
             else:
-                kpoints_str = "x".join(str(k) for k in kpoints_val)
-                label = f"kpoints_{kpoints_str}_encut_{encut}".replace(".", "_")
+                label = format_vasp_convergence_label(kpoints_val, encut)
             child = getattr(self.ctx, label, None)
 
             if child is None:

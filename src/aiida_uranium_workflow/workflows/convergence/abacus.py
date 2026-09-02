@@ -4,6 +4,7 @@ from aiida import orm
 from aiida.engine import calcfunction, WorkChain
 from aiida.plugins import WorkflowFactory
 from itertools import product
+from aiida_uranium_workflow.utils.labels import format_abacus_convergence_label
 
 ChildWorkChain = WorkflowFactory("abacus.base")
 
@@ -107,12 +108,9 @@ class AbacusConvergenceWorkChain(WorkChain):
                 continue
 
             if use_kpoints_distance:
-                label = f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(
-                    ".", "_"
-                )
+                label = format_abacus_convergence_label(ecutwfc, kpoints_val)
             else:
-                kpoints_str = "x".join(str(k) for k in kpoints_val)
-                label = f"ecutwfc_{ecutwfc}_kpoints_{kpoints_str}".replace(".", "_")
+                label = format_abacus_convergence_label(ecutwfc, kpoints_val)
 
             param_dict = abacus_block.parameters.get_dict()
             param_dict.setdefault("input", {})["ecutwfc"] = ecutwfc
@@ -165,12 +163,9 @@ class AbacusConvergenceWorkChain(WorkChain):
 
         for ecutwfc, kpoints_val in product(ecutwfc_list, kpoints_values):
             if use_kpoints_distance:
-                label = f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(
-                    ".", "_"
-                )
+                label = format_abacus_convergence_label(ecutwfc, kpoints_val)
             else:
-                kpoints_str = "x".join(str(k) for k in kpoints_val)
-                label = f"ecutwfc_{ecutwfc}_kpoints_{kpoints_str}".replace(".", "_")
+                label = format_abacus_convergence_label(ecutwfc, kpoints_val)
             child = getattr(self.ctx, label, None)
 
             if child is None:
@@ -215,13 +210,10 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
             ecutwfc = input_block.get("ecutwfc")
             if hasattr(child.inputs, "kpoints_distance"):
                 kpoints_val = child.inputs.kpoints_distance.value
-                label = f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(
-                    ".", "_"
-                )
+                label = format_abacus_convergence_label(ecutwfc, kpoints_val)
             elif hasattr(child.inputs, "kpoints"):
                 kpoints_mesh = child.inputs.kpoints.get_kpoints_mesh()[0]
-                kpoints_str = "x".join(str(k) for k in kpoints_mesh)
-                label = f"ecutwfc_{ecutwfc}_kpoints_{kpoints_str}".replace(".", "_")
+                label = format_abacus_convergence_label(ecutwfc, kpoints_mesh)
             else:
                 continue
             status[label] = (
@@ -236,13 +228,10 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
 
         if hasattr(child.inputs, "kpoints_distance"):
             kpoints_val = child.inputs.kpoints_distance.value
-            label = f"ecutwfc_{ecutwfc}_kpoints_distance_{kpoints_val}".replace(
-                ".", "_"
-            )
+            label = format_abacus_convergence_label(ecutwfc, kpoints_val)
         elif hasattr(child.inputs, "kpoints"):
             kpoints_mesh = child.inputs.kpoints.get_kpoints_mesh()[0]
-            kpoints_str = "x".join(str(k) for k in kpoints_mesh)
-            label = f"ecutwfc_{ecutwfc}_kpoints_{kpoints_str}".replace(".", "_")
+            label = format_abacus_convergence_label(ecutwfc, kpoints_mesh)
         else:
             continue
 

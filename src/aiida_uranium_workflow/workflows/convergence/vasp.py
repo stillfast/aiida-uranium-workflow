@@ -177,7 +177,7 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parsers import fetch_vasp
+    from aiida_uranium_workflow.utils.parsers import fetch_summary
 
     total_energy = {}
     num_atoms = {}
@@ -221,15 +221,16 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
         else:
             continue
 
-        structure = child.inputs.structure
-        n_atoms = len(structure.sites)
-        # Use the shared parser for energy + wall-time; mirrors the
-        # smear/magmom VASP workflows.
-        energy, wall_time = fetch_vasp(child)
+        # Unified parser: energy / wall-time / natoms in one call.
+        summary = fetch_summary(child, "vasp")
+        energy = summary["energy_ev"]
+        wall_time = summary["time_s"]
+        n_atoms = summary["natoms"]
         total_energy[label] = energy
         wall_time_seconds[label] = wall_time
-        num_atoms[label] = n_atoms
-        if energy is not None:
+        if n_atoms:
+            num_atoms[label] = n_atoms
+        if energy is not None and n_atoms:
             total_energy_per_atom[label] = energy / n_atoms
         status[label] = (
             int(child.exit_status)

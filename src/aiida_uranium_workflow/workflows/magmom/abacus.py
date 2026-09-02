@@ -147,7 +147,7 @@ def parse_and_gather_magmom_results(child_pks):
     """
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parsers import fetch_abacus
+    from aiida_uranium_workflow.utils.parsers import fetch_summary
 
     magnetism = {}
     final_magnetism = {}
@@ -182,11 +182,10 @@ def parse_and_gather_magmom_results(child_pks):
         magnetism[pk] = misc.get("magnetism")
         final_magnetism[pk] = misc.get("final_magnetism")
 
-        # Use the shared parser so energy + wall-time is collected in
-        # the same way as the smear / convergence workflows.
-        energy, wall_time = fetch_abacus(child)
-        final_energy[pk] = energy
-        wall_time_seconds[pk] = wall_time
+        # Unified parser entry (smear / convergence / magmom).
+        summary = fetch_summary(child, "abacus")
+        final_energy[pk] = summary["energy_ev"]
+        wall_time_seconds[pk] = summary["time_s"]
 
     result = {
         "magnetism": magnetism,

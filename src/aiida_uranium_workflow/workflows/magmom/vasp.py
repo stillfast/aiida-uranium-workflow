@@ -170,7 +170,7 @@ def parse_and_gather_magmom_results(child_pks):
     """
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parsers import fetch_vasp
+    from aiida_uranium_workflow.utils.parsers import fetch_summary
 
     magnetization = {}
     site_magnetization = {}
@@ -200,10 +200,10 @@ def parse_and_gather_magmom_results(child_pks):
         magnetization[pk] = misc.get("magnetization")
         site_magnetization[pk] = misc.get("site_magnetization")
 
-        # Shared parser: consistent with smear / convergence.
-        energy, wall_time = fetch_vasp(child)
-        final_energy[pk] = energy
-        wall_time_seconds[pk] = wall_time
+        # Unified parser entry (smear / convergence / magmom).
+        summary = fetch_summary(child, "vasp")
+        final_energy[pk] = summary["energy_ev"]
+        wall_time_seconds[pk] = summary["time_s"]
 
     result = {
         "magnetization": magnetization,

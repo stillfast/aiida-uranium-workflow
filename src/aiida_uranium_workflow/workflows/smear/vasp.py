@@ -124,7 +124,7 @@ def parse_and_gather_smear_results(child_pks):
     """通过 calcfunction 将原始文件解析过程记录在 Provenance Graph 中。"""
     from aiida.orm import load_node
 
-    from aiida_uranium_workflow.utils.parsers import fetch_vasp
+    from aiida_uranium_workflow.utils.parsers import fetch_summary
 
     eentropy = {}
     num_atoms = {}
@@ -156,7 +156,9 @@ def parse_and_gather_smear_results(child_pks):
 
         # Energy + wall-time from misc (shared parser).
         try:
-            energy, wall_time = fetch_vasp(child)
+            summary = fetch_summary(child, "vasp")
+            energy = summary["energy_ev"]
+            wall_time = summary["time_s"]
             total_energy[label] = energy
             wall_time_seconds[label] = wall_time
         except Exception as e:  # noqa: BLE001 — defensive: misc missing
@@ -165,8 +167,6 @@ def parse_and_gather_smear_results(child_pks):
 
         try:
             retrieved = child.outputs.retrieved
-            structure = child.inputs.structure
-
             with retrieved.open("vasprun.xml") as f:
                 tree = ET.parse(f)
                 root = tree.getroot()
@@ -183,11 +183,12 @@ def parse_and_gather_smear_results(child_pks):
 
             if eentropy_values:
                 last_eentropy = eentropy_values[-1]
-                n_atoms = len(structure.sites)
+                n_atoms = summary.get("natoms")
 
                 eentropy[label] = last_eentropy
-                num_atoms[label] = n_atoms
-                eentropy_per_atom[label] = last_eentropy / n_atoms
+                if n_atoms:
+                    num_atoms[label] = n_atoms
+                    eentropy_per_atom[label] = last_eentropy / n_atoms
             else:
                 eentropy[label] = None
 

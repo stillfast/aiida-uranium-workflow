@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 from ._common import (
+    append_overview_section,
     AxisSpec,
     format_scalar,
     render_2d_grid,
@@ -504,6 +505,8 @@ def generate_report(output_params: Dict[str, Any], pk: int, workflow_type: str) 
         generate_summary_table(output_params),
         "",
     ]
+
+    append_overview_section(report_lines, output_params)
 
     if "status" in output_params:
         report_lines += [

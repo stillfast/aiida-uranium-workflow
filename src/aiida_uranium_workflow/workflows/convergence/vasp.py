@@ -183,6 +183,7 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
     num_atoms = {}
     total_energy_per_atom = {}
     wall_time_seconds = {}
+    scf_steps = {}
     status = {}
 
     for pk in child_pks.get_list():
@@ -228,6 +229,7 @@ def parse_and_gather_convergence_results(child_pks, kpoints_mode=None):
         n_atoms = summary["natoms"]
         total_energy[label] = energy
         wall_time_seconds[label] = wall_time
+        scf_steps[label] = summary["scf_steps"]
         if n_atoms:
             num_atoms[label] = n_atoms
         if energy is not None and n_atoms:

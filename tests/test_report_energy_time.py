@@ -634,3 +634,60 @@ class TestMagmomMatrixTable:
         assert "[+0.00, +0.00, -4.00]" in table  # M_U2 AFM
         assert "M_start_U1 (µ_B)" in table
         assert "| +4.00 | +4.00 |" in table  # bmu seeds
+
+
+# ---------------------------------------------------------------------------
+# Overview table (improve.md Phase B) — shared per-label summary
+# ---------------------------------------------------------------------------
+
+
+class TestRenderOverviewTable:
+    """The canonical energy / time / scf-steps per-label table."""
+
+    def test_basic(self):
+        from aiida_uranium_workflow.utils.report._common import (
+            render_overview_table,
+        )
+
+        out = {
+            "total_energy": {"a": -10.5, "b": -9.0},
+            "wall_time_seconds": {"a": 60.0, "b": None},
+            "scf_steps": {"a": 12, "b": 30},
+            "status": {"a": 0, "b": 0},
+        }
+        table = render_overview_table(out)
+        assert "| label | energy (eV) | time (s) | scf steps | exit |" in table
+        assert "| a | -10.500000 | 60.000000 | 12.000000 | 0 |" in table
+        assert "| b | -9.000000 | — | 30.000000 | 0 |" in table
+
+    def test_empty(self):
+        from aiida_uranium_workflow.utils.report._common import (
+            render_overview_table,
+        )
+
+        assert render_overview_table({"eentropy": {}}) == ""
+
+    def test_final_energy_fallback(self):
+        from aiida_uranium_workflow.utils.report._common import (
+            render_overview_table,
+        )
+
+        out = {
+            "final_energy": {"x": -1.0},
+            "wall_time_seconds": {"x": 5.0},
+        }
+        table = render_overview_table(out)
+        assert "| x | -1.000000 | 5.000000 | — | — |" in table
+
+    def test_pk_keyed_magmom(self):
+        from aiida_uranium_workflow.utils.report._common import (
+            render_overview_table,
+        )
+
+        out = {
+            "final_energy": {342670: -27066.5},
+            "wall_time_seconds": {342670: 75.0},
+            "scf_steps": {342670: 22},
+        }
+        table = render_overview_table(out)
+        assert "| 342670 | -27066.500000 | 75.000000 | 22.000000 | — |" in table

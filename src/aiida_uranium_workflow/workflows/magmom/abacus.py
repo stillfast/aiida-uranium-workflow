@@ -154,6 +154,7 @@ def parse_and_gather_magmom_results(child_pks):
     nspin = {}
     final_energy = {}
     wall_time_seconds = {}
+    scf_steps = {}
     status = {}
 
     for pk in child_pks.get_list():
@@ -186,6 +187,7 @@ def parse_and_gather_magmom_results(child_pks):
         summary = fetch_summary(child, "abacus")
         final_energy[pk] = summary["energy_ev"]
         wall_time_seconds[pk] = summary["time_s"]
+        scf_steps[pk] = summary["scf_steps"]
 
     result = {
         "magnetism": magnetism,
@@ -193,6 +195,7 @@ def parse_and_gather_magmom_results(child_pks):
         "nspin": nspin,
         "final_energy": final_energy,
         "wall_time_seconds": wall_time_seconds,
+        "scf_steps": scf_steps,
         "status": status,
     }
     return orm.Dict(result)

@@ -32,6 +32,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from ._common import (
+    append_overview_section,
     format_scalar,
     render_per_child_table,
     render_report_footer,
@@ -404,6 +405,11 @@ def generate_report(output_params: Dict[str, Any], pk: int, workflow_type: str) 
         "",
         generate_summary_table(output_params, workflow_type),
         "",
+    ]
+
+    append_overview_section(lines, output_params)
+
+    lines += [
         "## Magnetism Matrix",
         "",
         generate_magmom_matrix_table(output_params, workflow_type),

@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict
 
 from ._common import (
     AxisSpec,
+    append_overview_section,
     format_scalar,
     render_2d_grid,
     render_report_footer,
@@ -283,6 +284,8 @@ def generate_report(output_params: Dict[str, Any], pk: int, workflow_type: str) 
         generate_summary_table(output_params),
         "",
     ]
+
+    append_overview_section(report_lines, output_params)
 
     if "status" in output_params:
         report_lines += [

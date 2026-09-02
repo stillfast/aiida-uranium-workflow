@@ -131,6 +131,7 @@ def parse_and_gather_smear_results(child_pks):
     eentropy_per_atom = {}
     total_energy = {}
     wall_time_seconds = {}
+    scf_steps = {}
     status = {}
 
     for pk in child_pks.get_list():
@@ -161,6 +162,7 @@ def parse_and_gather_smear_results(child_pks):
             wall_time = summary["time_s"]
             total_energy[label] = energy
             wall_time_seconds[label] = wall_time
+            scf_steps[label] = summary["scf_steps"]
         except Exception as e:  # noqa: BLE001 — defensive: misc missing
             total_energy[label] = f"Parsing failed: {str(e)}"
             wall_time_seconds[label] = None
@@ -202,6 +204,7 @@ def parse_and_gather_smear_results(child_pks):
             "eentropy_per_atom": eentropy_per_atom,
             "total_energy": total_energy,
             "wall_time_seconds": wall_time_seconds,
+            "scf_steps": scf_steps,
             "status": status,
         }
     )

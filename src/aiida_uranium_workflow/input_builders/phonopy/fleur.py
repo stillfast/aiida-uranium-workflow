@@ -4,12 +4,13 @@ Translates a :class:`ParamBundle` into the ``inputs`` dict expected by
 :class:`aiida_uranium_workflow.workflows.phonopy.fleur.FleurPhonopyWorkChain`.
 
 * the FLEUR SCF base (physical / SCF parameters, k-points) comes from
-  ``parameters/fleur/scf.yml`` (``software_params``) — the adapter
-  switches the SCF ``wf_parameters`` to ``mode='force'`` so each
-  displaced supercell run returns atomic forces (FLEUR computes forces
-  only with the geometry optimisation active, ``l_f="T"`` — fleur.md
-  §4.5; aiida-fleur writes them to ``relax.xml``, exposed as
-  ``relax_parameters['posforces']``);
+  ``parameters/fleur/scf.yml`` (``software_params``) — the adapter keeps
+  the SCF in ``density`` mode and adds an explicit ``l_f`` inpxml
+  change, so each displaced supercell returns atomic forces (FLEUR
+  computes forces only with the geometry optimisation active,
+  ``l_f="T"`` — fleur.md §4.5; aiida-fleur exposes them as
+  ``output_parameters['force_atoms']``, *not* via ``relax_parameters``,
+  which a fixed-lattice run never produces);
 * the phonopy settings (supercell / primitive matrix / band path /
   DOS) come from the ``parameters/phonopy.yml`` protocol block
   (``workflow_data['phonopy']``) — reused verbatim from the ABACUS
@@ -22,10 +23,11 @@ from ..base import AdaptedInputs, SoftwareAdapter
 from ..phonopy.abacus import AbacusPhonopyAdapter
 from typing import Any, Tuple
 
-#: Force-convergence settings used by FleurScfWorkChain's ``force`` mode
-#: (merged into the SCF ``wf_parameters``; user values win).
+#: Force settings merged into the SCF ``wf_parameters`` (user values
+#: win). ``qfix`` keeps every displaced atom fixed — phonopy needs the
+#: forces at the displaced positions, not a relaxation — while ``l_f``
+#: turns on the force computation itself (see :meth:`_build_workchain_inputs`).
 _FORCE_WF_DEFAULTS = {
-    "force_converged": 0.002,  # Htr/bohr
     "force_dict": {
         "qfix": 2,
         "forcealpha": 0.5,
@@ -61,14 +63,45 @@ class FleurPhonopyAdapter(SoftwareAdapter):
 
         ph = dict(self.workflow_data.get("phonopy", {}) or {})
 
-        # Switch the SCF to force mode: FLEUR only computes atomic forces
-        # when the geometry optimisation is active (l_f="T"), and
-        # aiida-fleur's mode='force' sets that and exposes the forces via
-        # relax_parameters.
+        # Keep the SCF in *density* mode (not force mode): phonopy's
+        # displaced supercells are fixed-lattice (qfix=2) force
+        # calculations. aiida-fleur's force mode only declares
+        # convergence once the underlying FLEUR run produced a
+        # ``relax.xml`` (relax_parameters); a qfix=2 run never writes
+        # relax.xml — FLEUR writes the forces into ``out.xml``
+        # (``force_atoms``) instead — so force mode would spin until
+        # ``fleur_runmax`` and exit with ERROR_DID_NOT_CONVERGE (362).
+        # Density mode converges the SCF and returns; the forces are
+        # already in ``output_parameters['force_atoms']``.
+        #
+        # ``l_f`` (compute forces) is enabled explicitly because FLEUR
+        # only computes atomic forces when the geometry optimisation is
+        # active (fleur.md §4.5) and aiida-fleur's density mode does not
+        # set it; qfix keeps the displaced atoms fixed.
         wf_parameters = dict(preset["wf_parameters"])
-        wf_parameters["mode"] = "force"
-        wf_parameters.setdefault("force_converged", _FORCE_WF_DEFAULTS["force_converged"])
-        wf_parameters.setdefault("force_dict", dict(_FORCE_WF_DEFAULTS["force_dict"]))
+        wf_parameters["mode"] = "density"
+        wf_parameters.setdefault("density_converged", 1.0e-7)
+        force_dict = dict(_FORCE_WF_DEFAULTS["force_dict"])
+        wf_parameters.setdefault("force_dict", dict(force_dict))
+        l_f_change = [
+            "set_inpchanges",
+            {
+                "changes": {
+                    "l_f": True,
+                    "qfix": wf_parameters["force_dict"].get("qfix", force_dict["qfix"]),
+                    "forcealpha": wf_parameters["force_dict"].get(
+                        "forcealpha", force_dict["forcealpha"]
+                    ),
+                    "forcemix": wf_parameters["force_dict"].get(
+                        "forcemix", force_dict["forcemix"]
+                    ),
+                }
+            },
+        ]
+        inpxml_changes = list(wf_parameters.get("inpxml_changes", []))
+        if l_f_change not in inpxml_changes:
+            inpxml_changes.append(l_f_change)
+        wf_parameters["inpxml_changes"] = inpxml_changes
 
         options = self.metadata.get("options", {})
         base: dict[str, Any] = {

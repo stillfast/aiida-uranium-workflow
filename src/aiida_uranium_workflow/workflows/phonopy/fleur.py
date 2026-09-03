@@ -5,15 +5,22 @@ finite-displacement method, using FLEUR forces:
 
 1. ``prepare`` — build the phonopy ``PreProcessData`` (supercell matrix,
    primitive-cell reduction, displacement generation).
-2. ``run_supercells`` — submit one ``FleurScfWorkChain`` in ``force``
-   mode per displaced supercell. FLEUR computes atomic forces only when
-   the geometry optimisation is active (``l_f="T"``, fleur.md §4.5:
-   "all force contributions are only calculated if a structural
-   optimization of the atom positions is activated"); aiida-fleur's
-   ``mode='force'`` sets that and writes the forces per SCF iteration to
-   ``out.xml``, which the FleurCalculation parser exposes as
-   ``output_parameters['force_atoms']`` (per atom
+2. ``run_supercells`` — submit one ``FleurScfWorkChain`` per displaced
+   supercell. The SCF runs in **density** mode with the geometry
+   optimisation switched on explicitly (``l_f="T"`` via an inpxml
+   change): FLEUR computes atomic forces only when the geometry
+   optimisation is active (fleur.md §4.5: "all force contributions are
+   only calculated if a structural optimization of the atom positions is
+   activated"), and aiida-fleur exposes them per SCF iteration in
+   ``out.xml`` as ``output_parameters['force_atoms']`` (per atom
    ``[fx, fy, fz]`` in Htr/bohr).
+
+   aiida-fleur's ``mode='force'`` is *not* used here: it declares
+   convergence only once the underlying run produced a ``relax.xml``
+   (relax_parameters), which a fixed-lattice run (``qfix``) never
+   writes — it would spin until ``fleur_runmax`` and exit 362. Density
+   mode converges the SCF and returns, and the forces are already in
+   ``force_atoms``.
 
    Because FLEUR only reports forces for the *representative* atom of
    each symmetry group (``totalForcesOnRepresentativeAtoms``), every
@@ -34,9 +41,10 @@ finite-displacement method, using FLEUR forces:
 
 The FLEUR SCF base (``base`` namespace) is assembled by
 :class:`aiida_uranium_workflow.input_builders.phonopy.fleur.FleurPhonopyAdapter`
-from ``parameters/fleur/scf.yml`` (its ``wf_parameters`` are switched to
-``mode='force'`` so each displaced supercell returns atomic forces); the
-phonopy-specific settings come from ``parameters/phonopy.yml``.
+from ``parameters/fleur/scf.yml`` (its ``wf_parameters`` keep density
+mode and gain an ``l_f`` inpxml change so each displaced supercell
+returns atomic forces); the phonopy-specific settings come from
+``parameters/phonopy.yml``.
 """
 
 from __future__ import annotations

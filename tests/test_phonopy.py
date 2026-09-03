@@ -466,11 +466,18 @@ class TestFleurPhonopyAdapter:
         structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
         inputs = adapter._build_workchain_inputs(structure)
 
-        # The SCF base is switched to force mode (l_f=True ⇒ forces).
+        # The SCF stays in density mode (a fixed-lattice phonopy run has
+        # no relax.xml, so aiida-fleur's force mode would never converge)
+        # but forces are enabled via an explicit l_f inpxml change.
         wf = inputs["base"]["wf_parameters"].get_dict()
-        assert wf["mode"] == "force"
+        assert wf["mode"] == "density"
         assert "force_dict" in wf
-        assert "force_converged" in wf
+        assert any(
+            isinstance(change, list)
+            and change[:1] == ["set_inpchanges"]
+            and change[1].get("changes", {}).get("l_f") is True
+            for change in wf.get("inpxml_changes", [])
+        )
         assert "fleur" in inputs["base"]
         assert "inpgen" in inputs["base"]
         assert "phonopy_code" in inputs

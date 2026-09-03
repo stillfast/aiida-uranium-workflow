@@ -389,7 +389,15 @@ _EXAMPLE_INPUTS: dict[str, dict] = {
 
 
 def _check(args) -> int:
-    """Dry-run: parse + validate the input.json, print the execution plan."""
+    """Dry-run: parse + validate the input.json, print the execution plan.
+
+    Beyond the coarse backend/preset summary, prints the *resolved*
+    parameter dicts that will reach each WorkChain — the per-backend SCF
+    preset (``software_params`` entry), the parsed protocol
+    (``workflow_data``) and the scheduler options from ``metadata`` — so
+    parameter mistakes are visible before anything is submitted.
+    """
+    import json
     from pathlib import Path
 
     from aiida_uranium_workflow.utils.config import ConfigLoader
@@ -406,26 +414,71 @@ def _check(args) -> int:
     profile = args.profile or ip.get("profile", "?")
     print(f"workflow: {workflow} | profile: {profile}")
     static = ip.get("static", {})
-    print(f"structure: {static.get('structure', '?')} | "
-          f"metadata: {static.get('metadata', '?')}")
+    structures = static.get("structure", "?")
+    n_structures = len(structures) if isinstance(structures, (list, tuple)) else 1
+    print(f"structure: {structures} | metadata: {static.get('metadata', '?')}")
 
-    # One line per (backend, preset).
-    for backend, entries in bundle.software_params.items():
-        if not entries:
-            continue
-        presets = []
-        for entry in entries:
-            code = ip.get("code", {}).get(backend, "?")
-            presets.append(f"{entry.get('preset', '?')}"
-                           f"@code:{code}")
-        print(f"backend {backend}: {', '.join(presets)}")
-
-    wf_presets = bundle.workflow_presets
-    if wf_presets:
-        print(f"protocol presets: {', '.join(wf_presets)}")
     codes = ip.get("code", {})
     if codes:
         print("codes: " + ", ".join(f"{k}={v}" for k, v in codes.items()))
+
+    wf_presets = bundle.workflow_presets or [None]
+    n_presets = sum(len(v) for v in bundle.software_params.values())
+    n_total = n_presets * len(wf_presets) * n_structures
+    print(
+        f"plan: {n_presets} preset(s) x {len(wf_presets)} protocol preset(s) "
+        f"x {n_structures} structure(s) -> {n_total} WorkChain(s)"
+    )
+
+    def dump(obj) -> str:
+        """Compact but readable JSON for a resolved parameter dict."""
+        return json.dumps(obj, indent=2, default=str)
+
+    # One block per (backend, preset): the SCF preset content the
+    # input_builder will translate into WorkChain inputs.
+    for backend, entries in bundle.software_params.items():
+        if not entries:
+            continue
+        code = codes.get(backend, "?")
+        names = bundle.software_preset_names.get(backend, [])
+        print(f"\nbackend {backend} @ code:{code} — {len(entries)} preset(s)")
+        for idx, entry in enumerate(entries):
+            name = names[idx] if idx < len(names) else f"{backend}#{idx}"
+            print(f"  [{backend}/{name}] software params (SCF preset):")
+            for line in dump(entry).splitlines():
+                print(f"    {line}")
+
+    # Protocol presets -> parsed workflow_data (shared by every backend).
+    protocol_label = ""
+    if bundle.workflow_data or wf_presets != [None]:
+        # Single-name protocols carry the preset name only inside
+        # ``input.json`` under the workflow key (e.g. ``"magmom":
+        # "test_u_afm_qe"``); resolve it so the header is unambiguous.
+        if wf_presets == [None]:
+            from aiida_uranium_workflow.schedulers import get_workflow_entry
+
+            wf_key = get_workflow_entry(workflow).workflow_key
+            raw_name = ip.get("parameters", {}).get(wf_key) if wf_key else None
+            if isinstance(raw_name, str):
+                protocol_label = f" (preset '{raw_name}')"
+        print(f"protocol / workflow_data{protocol_label}:")
+        if wf_presets == [None]:
+            for line in dump(bundle.workflow_data).splitlines():
+                print(f"  {line}")
+        else:
+            for wf_preset in wf_presets:
+                wd = bundle.workflow_data_map.get(wf_preset, bundle.workflow_data)
+                print(f"  preset '{wf_preset}':")
+                for line in dump(wd).splitlines():
+                    print(f"    {line}")
+
+    # Scheduler options from metadata (shared by every submission).
+    options = bundle.metadata.get("options", {})
+    if options:
+        print("\nscheduler options (metadata):")
+        for line in dump(options).splitlines():
+            print(f"  {line}")
+
     print("[check] configuration OK — nothing submitted.")
     return 0
 

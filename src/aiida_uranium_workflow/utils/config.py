@@ -76,7 +76,7 @@ class ConfigLoader:
             workflow_data_map = {}
 
         # Load backend-specific parameters
-        software_params = self._load_all_software_params()
+        software_params, software_preset_names = self._load_all_software_params()
 
         # Load metadata
         metadata = self._load_metadata()
@@ -101,6 +101,7 @@ class ConfigLoader:
             protocol=protocol,
             workflow_data=workflow_data,
             software_params=software_params,
+            software_preset_names=software_preset_names,
             metadata=metadata,
             workflow_presets=workflow_presets,
             workflow_data_map=workflow_data_map,
@@ -204,8 +205,17 @@ class ConfigLoader:
             return entry.parser_hook(protocol)
         return {}
 
-    def _load_all_software_params(self) -> dict[str, list[dict[str, Any]]]:
+    def _load_all_software_params(
+        self,
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[str]]]:
         """Load backend-specific parameters from their YAML files.
+
+        Returns ``(software_params, preset_names)`` where
+        ``preset_names[backend]`` holds the requested preset names in the
+        exact same order as ``software_params[backend]`` (the resolved
+        YAML sections do not carry their own name, so callers that need
+        to label a submission — e.g. the ``check`` CLI — use the parallel
+        name list).
 
         Each backend has its own subdirectory ``parameters/<backend>/``.
         The default preset file is ``parameters/<backend>/<backend>.yml``,
@@ -243,6 +253,7 @@ class ConfigLoader:
         orchestrator submits one WorkChain per preset, in order.
         """
         out: dict[str, list[dict[str, Any]]] = {}
+        names_out: dict[str, list[str]] = {}
         parameters = self.input_params.get("parameters", {})
         for backend, param_name in parameters.items():
             # Workflow-protocol slots (``smear`` / ``magmom`` / ...) live
@@ -263,17 +274,19 @@ class ConfigLoader:
                     table = read_yaml(
                         PARAMETERS_DIR / backend / f"{category}.yml"
                     )
+                    preset_names = self._coerce_preset_names(
+                        backend, category, category_value
+                    )
                     presets = out.setdefault(backend, [])
                     presets.extend(
                         self._resolve_presets(
                             backend,
                             table,
-                            self._coerce_preset_names(
-                                backend, category, category_value
-                            ),
+                            preset_names,
                             source=f"parameters/{backend}/{category}.yml",
                         )
                     )
+                    names_out.setdefault(backend, []).extend(preset_names)
                 continue
 
             preset_names = self._coerce_preset_names(backend, backend, param_name)
@@ -287,7 +300,8 @@ class ConfigLoader:
                 preset_names,
                 source=f"parameters/{backend}/{backend}.yml",
             )
-        return out
+            names_out[backend] = list(preset_names)
+        return out, names_out
 
     @staticmethod
     def _coerce_preset_names(

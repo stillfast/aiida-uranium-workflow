@@ -650,3 +650,84 @@ class TestSubCategoryBackendSlot:
         )
         with pytest.raises(TypeError, match="must be a string or list of strings"):
             ConfigLoader(path).load_all()
+
+
+# ---------------------------------------------------------------------------
+# software_preset_names — index-aligned names for the resolved entries
+# ---------------------------------------------------------------------------
+
+
+class TestSoftwarePresetNames:
+    """``bundle.software_preset_names[backend]`` mirrors the requested
+    preset names, in the same order as ``software_params[backend]``.
+
+    The resolved entries are plain YAML sections that never carry their
+    own name; the parallel name list is what lets the ``check`` CLI
+    label each planned submission (and is what surfaces a typo'd or
+    misplaced preset before submit).
+    """
+
+    def _write_input(self, tmp_path: Path, parameters: dict) -> Path:
+        path = tmp_path / "input.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "workflow": "magmom",
+                    "parameters": parameters,
+                    "static": {
+                        "structure": "bcc-uranium",
+                        "metadata": "yeesuan",
+                    },
+                    "profile": "aiida_profile",
+                    "code": {"abacus": "x", "qe": "qe@yeesuan"},
+                }
+            )
+        )
+        return path
+
+    def test_flat_single_preset(self, tmp_path: Path) -> None:
+        """A plain string becomes a one-element name list."""
+        path = self._write_input(
+            tmp_path, {"abacus": "test", "magmom": "test"}
+        )
+        bundle = ConfigLoader(path).load_all()
+        assert bundle.software_preset_names["abacus"] == ["test"]
+
+    def test_list_presets_keep_order(self, tmp_path: Path) -> None:
+        path = self._write_input(
+            tmp_path, {"abacus": ["test", "test_soc"], "magmom": "test"}
+        )
+        bundle = ConfigLoader(path).load_all()
+        names = bundle.software_preset_names["abacus"]
+        entries = bundle.software_params["abacus"]
+        assert names == ["test", "test_soc"]
+        assert len(entries) == len(names)
+        # Index alignment: entry[0] is the sg15_sz preset requested as
+        # 'test', entry[1] the sg15_sz_soc preset requested as 'test_soc'.
+        assert entries[0]["pseudo_family"] == "sg15_sz"
+        assert entries[1]["pseudo_family"] == "sg15_sz_soc"
+
+    def test_dict_form_category_names(self, tmp_path: Path) -> None:
+        """Dict-form slots record the category sub-table's preset names."""
+        path = self._write_input(
+            tmp_path,
+            {
+                "abacus": {"magmom": ["qe_pw_pz", "qe_pw_pbe"]},
+                "magmom": "test",
+            },
+        )
+        bundle = ConfigLoader(path).load_all()
+        assert bundle.software_preset_names["abacus"] == [
+            "qe_pw_pz",
+            "qe_pw_pbe",
+        ]
+        assert len(bundle.software_params["abacus"]) == 2
+
+    def test_missing_backend_absent_from_names(self, tmp_path: Path) -> None:
+        """Backends not requested have no entry in either dict."""
+        path = self._write_input(
+            tmp_path, {"abacus": "test", "magmom": "test"}
+        )
+        bundle = ConfigLoader(path).load_all()
+        assert "qe" not in bundle.software_params
+        assert "qe" not in bundle.software_preset_names

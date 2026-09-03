@@ -325,3 +325,70 @@ def test_example_templates_cover_all_methods():
         t = _EXAMPLE_INPUTS[method]
         assert t["workflow"] == method
         assert "static" in t and "code" in t
+
+
+class TestCheckOutput:
+    """``check`` prints the resolved per-preset parameters that reach
+    the WorkChain (SCF preset content, parsed protocol, scheduler
+    options), not just a coarse ``?``-labelled summary."""
+
+    QE_MAGMOM_INPUT = {
+        "workflow": "magmom",
+        "parameters": {
+            "qe": {"magmom": ["test_u"]},
+            "magmom": "test_u_afm_qe",
+        },
+        "static": {"structure": "gamma-uranium", "metadata": "yeesuan"},
+        "profile": "aiida_profile",
+        "code": {"qe": "qe@yeesuan"},
+    }
+
+    def _write(self, tmp_path, payload=None):
+        import json
+
+        path = tmp_path / "input.json"
+        path.write_text(
+            json.dumps(payload or self.QE_MAGMOM_INPUT, indent=2)
+        )
+        return path
+
+    def test_prints_resolved_params(self, tmp_path, capsys):
+        """The SCF preset name, its parameters, the protocol workflow
+        data and the scheduler options all appear in the output."""
+        path = self._write(tmp_path)
+        rc = main(["check", "-i", str(path)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        # Preset name + code, not the old '?@code:...' placeholder.
+        assert "[qe/test_u]" in out
+        assert "qe@yeesuan" in out
+        # Resolved SCF parameters reaching the WorkChain.
+        assert "ecutwfc" in out and "60" in out
+        assert "kpoints_mesh" in out
+        assert "pseudo_family" in out
+        # Parsed protocol (magmom sweep) + scheduler options.
+        assert "magmom_list" in out
+        assert "queue_name" in out
+        assert "configuration OK" in out
+
+    def test_multi_preset_lists_all_names(self, tmp_path, capsys):
+        """Multiple presets appear under their own header block."""
+        payload = dict(self.QE_MAGMOM_INPUT)
+        payload["parameters"] = {
+            "abacus": ["test", "test_soc"],
+            "magmom": "test",
+        }
+        payload["code"] = {"abacus": "abacus@yeesuan"}
+        path = self._write(tmp_path, payload)
+        rc = main(["check", "-i", str(path)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "[abacus/test]" in out
+        assert "[abacus/test_soc]" in out
+
+    def test_invalid_input_returns_nonzero(self, tmp_path, capsys):
+        path = tmp_path / "input.json"
+        path.write_text('{"workflow": "magmom"}')
+        rc = main(["check", "-i", str(path)])
+        assert rc != 0
+        assert "invalid input" in capsys.readouterr().err

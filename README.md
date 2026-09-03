@@ -19,7 +19,9 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
   structure, profile, codes) → `output.json` (WorkChain UUID map). No Python
   scripting needed for routine runs.
 * **Unified CLI** — `aiida-uranium {run, report, archive, copy, check,
-  example, plot}`; `check` dry-runs an input.json, `example` writes a
+  example, plot}`; `check` dry-runs an input.json and prints the resolved
+  parameters that reach each WorkChain (SCF preset content, parsed
+  protocol, scheduler options), `example` writes a
   reference input.json, and `plot` renders band / DOS / phonon figures
   (band_compare included) by spec `mode` — superseding the legacy
   `aiida-uranium-plot-banddos` / `aiida-uranium-plot-phonon` scripts.

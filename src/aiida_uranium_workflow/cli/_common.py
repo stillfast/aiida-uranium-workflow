@@ -775,8 +775,10 @@ def build_unified_parser(
         description=(
             "Parse and validate the input.json against the workflow "
             "protocol / static tables (no AiiDA process is submitted). "
-            "Prints the resolved backends, presets, structure / metadata "
-            "and codes; exits non-zero when the configuration is invalid."
+            "Prints the resolved backend / preset names, the SCF preset "
+            "parameters, parsed protocol (workflow_data), scheduler "
+            "options and codes that would reach each WorkChain; exits "
+            "non-zero when the configuration is invalid."
         ),
     )
     check_p.add_argument(

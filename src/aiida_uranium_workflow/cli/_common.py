@@ -778,7 +778,10 @@ def build_unified_parser(
             "Prints the resolved backend / preset names, the SCF preset "
             "parameters, parsed protocol (workflow_data), scheduler "
             "options and codes that would reach each WorkChain; exits "
-            "non-zero when the configuration is invalid."
+            "non-zero when the configuration is invalid. With --out DIR, "
+            "additionally dry-runs each input builder against the live "
+            "AiiDA profile and writes one YAML per planned WorkChain "
+            "with the exact inputs it would receive."
         ),
     )
     check_p.add_argument(
@@ -793,6 +796,18 @@ def build_unified_parser(
         "--profile",
         default=None,
         help="AiiDA profile name (overrides input.json['profile']).",
+    )
+    check_p.add_argument(
+        "-o",
+        "--out",
+        dest="out_dir",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Write one preview YAML per planned WorkChain into DIR "
+            "(DB-aware dry run; requires the referenced codes / pseudo "
+            "families / structures to be installed)."
+        ),
     )
 
     # example -------------------------------------------------------------

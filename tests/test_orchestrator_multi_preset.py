@@ -254,3 +254,54 @@ def test_only_flag_filters_backends(orchestrator_env):
     # vasp skipped entirely.
     assert len(pks) == 2
     assert _RecordingAdapter.instances == [("abacus", 0), ("abacus", 1)]
+
+
+# ---------------------------------------------------------------------------
+# prepare() — dry-run preview (no submit)
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_builds_inputs_without_submitting(orchestrator_env):
+    """``prepare`` returns one PreparedJob per (backend, preset) and never
+    calls ``submit`` (unlike ``run``)."""
+    from aiida_uranium_workflow.schedulers.base import PreparedJob
+
+    _RecordingAdapter, _FakeSubmit, SmearWorkflowOrchestrator = orchestrator_env
+
+    bundle = _make_bundle(
+        {
+            "abacus": [{"label": "a"}, {"label": "b"}],
+            "vasp": [{"label": "v"}],
+        }
+    )
+
+    jobs = SmearWorkflowOrchestrator(bundle).prepare()
+
+    # 2 abacus + 1 vasp presets -> 3 planned WorkChains.
+    assert len(jobs) == 3
+    assert all(isinstance(job, PreparedJob) for job in jobs)
+    # Nothing was submitted.
+    assert len(_FakeSubmit.calls) == 0
+    # Each job carries the preset's inputs (the recorder adapter echoes
+    # the software_params it received) plus its identity fields.
+    assert [job.preset_name for job in jobs] == ["preset0", "preset1", "preset0"]
+    assert jobs[0].inputs["label"] == "a"
+    assert jobs[1].inputs["label"] == "b"
+    assert jobs[2].inputs["label"] == "v"
+    assert jobs[0].structure_name == "fake-structure"
+
+
+def test_prepare_profile_override_passed_to_load_profile(
+    orchestrator_env, monkeypatch
+):
+    """``prepare(profile=...)`` forwards the override to ``load_profile``."""
+    _RecordingAdapter, _FakeSubmit, SmearWorkflowOrchestrator = orchestrator_env
+
+    calls = []
+    monkeypatch.setattr(
+        "aiida_uranium_workflow.schedulers.base.load_profile",
+        lambda name: calls.append(name),
+    )
+    bundle = _make_bundle({"abacus": [{"label": "a"}]})
+    SmearWorkflowOrchestrator(bundle).prepare(profile="other_profile")
+    assert calls == ["other_profile"]

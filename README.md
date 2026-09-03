@@ -21,7 +21,11 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
 * **Unified CLI** — `aiida-uranium {run, report, archive, copy, check,
   example, plot}`; `check` dry-runs an input.json and prints the resolved
   parameters that reach each WorkChain (SCF preset content, parsed
-  protocol, scheduler options), `example` writes a
+  protocol, scheduler options) — with `--out DIR` it additionally
+  dry-runs each input builder against the live profile and writes one
+  YAML per planned WorkChain with the exact inputs it would receive
+  (post-adapter: resolved codes, pseudo families, k-points, final SCF
+  parameters). `example` writes a
   reference input.json, and `plot` renders band / DOS / phonon figures
   (band_compare included) by spec `mode` — superseding the legacy
   `aiida-uranium-plot-banddos` / `aiida-uranium-plot-phonon` scripts.

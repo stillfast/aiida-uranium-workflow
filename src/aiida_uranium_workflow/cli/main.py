@@ -479,6 +479,31 @@ def _check(args) -> int:
         for line in dump(options).splitlines():
             print(f"  {line}")
 
+    # DB-aware dry run: write one YAML per planned WorkChain with the
+    # exact inputs it would receive (nothing is submitted).
+    out_dir = getattr(args, "out_dir", None)
+    if out_dir:
+        from aiida_uranium_workflow.cli.preview import write_preview_files
+
+        try:
+            written = write_preview_files(
+                bundle, out_dir, profile=args.profile
+            )
+        except Exception as exc:  # noqa: BLE001 — DB / adapter failure
+            print(
+                f"[check] preview failed: {exc} "
+                f"(needs a live AiiDA profile with the referenced codes, "
+                f"pseudo families and structures)",
+                file=sys.stderr,
+            )
+            return 1
+        for path in written:
+            print(f"[check] wrote {path}")
+        if not written:
+            print("[check] nothing to preview — no planned WorkChains.")
+        print("[check] configuration OK — preview only, nothing submitted.")
+        return 0
+
     print("[check] configuration OK — nothing submitted.")
     return 0
 

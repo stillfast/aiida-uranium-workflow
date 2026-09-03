@@ -67,6 +67,24 @@ class SubmittedJob:
     uuid: str = ""
 
 
+@dataclass
+class PreparedJob:
+    """One planned WorkChain — adapter inputs built, nothing submitted.
+
+    Produced by :meth:`WorkflowOrchestrator.prepare` for the dry-run
+    ``check --out`` path: ``inputs`` is the exact dict the adapter
+    produced (what ``submit(workchain_cls, **inputs)`` would receive),
+    with ORM nodes inside it.  The CLI converts those nodes into
+    reviewable YAML values when writing the per-WorkChain preview files.
+    """
+
+    backend: str
+    preset_name: str
+    structure_name: str
+    workchain_cls: type
+    inputs: dict[str, Any]
+
+
 _WORKFLOW_REGISTRY: Dict[str, WorkflowEntry] = {}
 
 
@@ -392,6 +410,25 @@ class WorkflowOrchestrator:
         """
         from aiida.engine import submit
 
+        adapted = self._adapt_one(
+            backend, cls, structure, preset_idx, workflow_preset
+        )
+        return submit(adapted.workchain_cls, **adapted.inputs)
+
+    def _adapt_one(
+        self,
+        backend: str,
+        cls: Type,
+        structure,
+        preset_idx: int = 0,
+        workflow_preset: str | None = None,
+    ):
+        """Run the adapter for one submission and return its inputs.
+
+        Shared by :meth:`_submit_one` (which then submits) and
+        :meth:`prepare` (the dry-run path that only builds the inputs a
+        WorkChain *would* receive, without submitting anything).
+        """
         preset = self.bundle.software_params[backend][preset_idx]
         workflow_data = (
             self.bundle.workflow_data_map.get(workflow_preset, self.bundle.workflow_data)
@@ -410,5 +447,43 @@ class WorkflowOrchestrator:
             # knowledge here.
             extra_codes=dict(self.bundle.input_params.get("code", {})),
         )
-        adapted = builder.adapt(structure)
-        return submit(adapted.workchain_cls, **adapted.inputs)
+        return builder.adapt(structure)
+
+    def prepare(self, profile: Optional[str] = None) -> List["PreparedJob"]:
+        """Dry-run: build the WorkChain inputs every planned submission
+        would receive, without submitting anything.
+
+        Walks the same (backend, preset, workflow-preset, structure)
+        grid as :meth:`run_with_jobs` but stops after the adapter ran,
+        returning :class:`PreparedJob` records instead of submitting.
+        ``check --out`` uses this to write one YAML file per WorkChain so
+        the user can review the parameters that actually reach each
+        WorkChain (post-adapter: resolved codes / pseudo families /
+        k-points / final SCF parameters) before submitting.
+
+        ``profile`` overrides ``input.json['profile']`` (the ``-p`` flag).
+        """
+        load_profile(profile or self.bundle.input_params["profile"])
+        structures = self._build_structure()
+        structure_names = self._structure_names()
+        wf_presets = self.bundle.workflow_presets or [None]
+        prepared: List[PreparedJob] = []
+        for backend, builder_cls, preset_idx, preset_name in self._select_backends():
+            for wf_preset in wf_presets:
+                for structure, structure_name in zip(structures, structure_names):
+                    adapted = self._adapt_one(
+                        backend, builder_cls, structure, preset_idx, wf_preset
+                    )
+                    final_name = (
+                        f"{preset_name}/{wf_preset}" if wf_preset else preset_name
+                    )
+                    prepared.append(
+                        PreparedJob(
+                            backend=backend,
+                            preset_name=final_name,
+                            structure_name=structure_name,
+                            workchain_cls=adapted.workchain_cls,
+                            inputs=adapted.inputs,
+                        )
+                    )
+        return prepared

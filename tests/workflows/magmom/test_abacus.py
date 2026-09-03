@@ -222,17 +222,21 @@ def test_gather_results_no_children(aiida_profile_clean, generate_workchain_abac
 
 
 def test_parse_and_gather_magmom_results(aiida_profile_clean):
-    """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs."""
+    """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs.
+
+    The gather result must satisfy the report-side schema contract
+    (:class:`GatherResult`): an empty sweep stores no children but still
+    round-trips through ``GatherResult.from_output_params``.
+    """
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
     child_pks = orm.List([])
 
     result = parse_and_gather_magmom_results(child_pks=child_pks)
 
     assert isinstance(result, orm.Dict)
     result_dict = result.get_dict()
-    assert "magnetism" in result_dict
-    assert "final_magnetism" in result_dict
-    assert result_dict["magnetism"] == {}
-    assert "nspin" in result_dict
-    assert result_dict["magnetism"] == {}
-    assert result_dict["final_magnetism"] == {}
-    assert result_dict["nspin"] == {}
+    gather = GatherResult.from_output_params(result_dict)
+    assert gather is not None
+    assert gather.backend == "abacus"
+    assert gather.children == []

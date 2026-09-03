@@ -17,6 +17,8 @@ from aiida_uranium_workflow.utils.report.schema import (
     GatherResult,
 )
 
+import pytest
+
 
 class TestChildRecordRoundTrip:
     def test_to_from_dict_round_trip(self):
@@ -99,3 +101,84 @@ class TestLegacyDetection:
         )
         assert result is not None
         assert result.children == []
+
+
+# ---------------------------------------------------------------------------
+# Contract: schema dict → magmom report (new path renders, legacy warns)
+# ---------------------------------------------------------------------------
+
+
+def _abacus_gather_output() -> dict:
+    """A realistic new-schema gather dict for an abacus magmom sweep."""
+    return GatherResult(
+        backend="abacus",
+        children=[
+            ChildRecord(
+                pk=1,
+                status=0,
+                finished_ok=True,
+                energy_ev=-123.45,
+                time_s=12.5,
+                scf_steps=30,
+                natoms=2,
+                data={"magnetism": [[0.0], [0.0]], "final_magnetism": 0.0},
+            ),
+            ChildRecord(
+                pk=2,
+                status=0,
+                finished_ok=True,
+                energy_ev=-123.5,
+                time_s=14.0,
+                scf_steps=32,
+                natoms=2,
+                data={"magnetism": [[4.0], [4.0]], "final_magnetism": 4.0},
+            ),
+        ],
+    ).to_dict()
+
+
+def _abacus_legacy_output() -> dict:
+    """The equivalent legacy pk-keyed dict (pre-schema nodes)."""
+    return {
+        "magnetism": {1: [[0.0], [0.0]], 2: [[4.0], [4.0]]},
+        "final_magnetism": {1: 0.0, 2: 4.0},
+        "final_energy": {1: -123.45, 2: -123.5},
+        "wall_time_seconds": {1: 12.5, 2: 14.0},
+        "scf_steps": {1: 30, 2: 32},
+        "status": {1: 0, 2: 0},
+    }
+
+
+class TestMagmomReportContract:
+    def test_schema_path_renders_without_warning(self):
+        from aiida_uranium_workflow.utils.report.magmom import generate_report
+
+        with pytest.warns(None) as caught:
+            report = generate_report(
+                _abacus_gather_output(), pk=1, workflow_type="abacus"
+            )
+        # No legacy warning: schema path was taken.
+        assert not any(
+            "legacy" in str(w.message).lower() for w in caught.list
+        )
+        assert "## Magnetism Matrix" in report
+        assert "## Calculation Status" in report
+
+    def test_schema_and_legacy_render_same_body(self):
+        """The same data must produce the same tables whether the node
+        stored the new schema or the legacy layout (besides the warning
+        on the legacy path)."""
+        import warnings
+
+        from aiida_uranium_workflow.utils.report.magmom import generate_report
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            from_schema = generate_report(
+                _abacus_gather_output(), pk=1, workflow_type="abacus"
+            )
+            from_legacy = generate_report(
+                _abacus_legacy_output(), pk=1, workflow_type="abacus"
+            )
+        assert any("legacy" in str(w.message) for w in caught)
+        assert from_schema == from_legacy

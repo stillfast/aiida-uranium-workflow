@@ -139,12 +139,46 @@ class AbacusMagmomWorkChain(WorkChain):
 
 @calcfunction
 def parse_and_gather_magmom_results(child_pks):
-    """Parse the magnetism outputs of each child calculation and gather them.
+    """Gather magmom child results into the report-side schema.
 
-    The ``misc`` output of an AbacusCalculation exposes ``magnetism`` (list of
-    per-atom magnetizations, ordered by species) and ``final_magnetism`` (the
-    total magnetization after SCF).
+    Each child is parsed by :class:`AbacusChildParser` into a
+    :class:`ChildRecord` (pk / exit status / energy eV / time / scf
+    steps / atoms + ``final_magnetism`` etc. under ``data``), and the
+    records are stored under the ``gather_schema`` layout defined in
+    :mod:`utils.report.schema` — the same layout the magmom report
+    consumes.
+
+    If the new-schema path fails (unexpected child shape), falls back to
+    the legacy pk-keyed layout and logs a warning — the report layer
+    then renders the legacy dict through its own fallback.
     """
+    import logging
+
+    from aiida.orm import load_node
+
+    from aiida_uranium_workflow.utils.parsers.child import AbacusChildParser
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
+    logger = logging.getLogger(__name__)
+    pks = child_pks.get_list()
+    try:
+        children = [
+            AbacusChildParser().parse(load_node(pk)) for pk in pks
+        ]
+        return orm.Dict(
+            GatherResult(backend="abacus", children=children).to_dict()
+        )
+    except Exception as exc:  # noqa: BLE001 — fall back to legacy layout
+        logger.warning(
+            "magmom gather (abacus): new-schema parse failed (%s); "
+            "falling back to legacy layout",
+            exc,
+        )
+        return _gather_magmom_legacy(child_pks)
+
+
+def _gather_magmom_legacy(child_pks) -> orm.Dict:
+    """Legacy pk-keyed gather layout (pre-schema WorkChain nodes)."""
     from aiida.orm import load_node
 
     from aiida_uranium_workflow.utils.parsers import fetch_summary

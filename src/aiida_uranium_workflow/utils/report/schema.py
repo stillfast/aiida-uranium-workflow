@@ -103,7 +103,9 @@ class GatherResult:
         }
 
     @classmethod
-    def from_output_params(cls, output_params: Dict[str, Any]) -> Optional["GatherResult"]:
+    def from_output_params(
+        cls, output_params: Dict[str, Any]
+    ) -> Optional["GatherResult"]:
         """Parse ``output_params``; ``None`` when it is not new-schema.
 
         Legacy dicts (produced by the pre-schema gather functions) have
@@ -122,3 +124,15 @@ class GatherResult:
             ],
             meta=dict(output_params.get("meta") or {}),
         )
+
+
+def schema_children_map(
+    result: GatherResult,
+) -> Dict[int, ChildRecord]:
+    """Index a :class:`GatherResult`'s children by pk.
+
+    Rendering helpers that historically consumed ``{pk: value}`` dicts
+    (energy / time / steps / status tables) can keep that shape by
+    looking values up through this map — one child per pk.
+    """
+    return {child.pk: child for child in result.children}

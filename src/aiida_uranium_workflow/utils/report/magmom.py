@@ -393,7 +393,68 @@ def generate_summary_table(
 
 # ---------------------------------------------------------------------------
 def generate_report(output_params: Dict[str, Any], pk: int, workflow_type: str) -> str:
-    """Generate a complete Markdown report for a magmom WorkChain."""
+    """Generate a complete Markdown report for a magmom WorkChain.
+
+    New-schema ``output_parameters`` (produced by the parser-based
+    gather calcfunctions, see :mod:`utils.report.schema`) are rendered
+    from the schema contract; legacy pk-keyed dicts (older WorkChain
+    nodes / hand-built test dicts) fall back to the pre-schema path and
+    emit a warning.
+    """
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
+    gather = GatherResult.from_output_params(output_params)
+    if gather is None:
+        import warnings
+
+        warnings.warn(
+            "magmom report: legacy (pre-schema) output_parameters "
+            "layout detected — rendering via the legacy path",
+            stacklevel=2,
+        )
+        return _generate_report_legacy(output_params, pk, workflow_type)
+
+    return _generate_report_from_gather(gather, pk, workflow_type)
+
+
+def _generate_report_from_gather(gather, pk: int, workflow_type: str) -> str:
+    """Render from a parsed :class:`GatherResult` (new-schema path).
+
+    Rebuilds the pk-keyed views the table generators expect out of the
+    schema records — energy / time / scf steps / status come straight
+    from each :class:`ChildRecord`'s normalised fields, and the
+    per-backend magnetism payload is re-published under the same
+    top-level keys the legacy renderers read (``magnetization`` /
+    ``final_magnetism`` / ``site_magnetization`` / ...), so the actual
+    Markdown generation is shared with the legacy path.
+    """
+    from aiida_uranium_workflow.utils.report.schema import schema_children_map
+
+    children = schema_children_map(gather)
+
+    def _by_pk(attr: str) -> Dict[Any, Any]:
+        return {
+            child_pk: getattr(record, attr)
+            for child_pk, record in children.items()
+        }
+
+    output_params: Dict[str, Any] = {
+        "status": _by_pk("status"),
+        "final_energy": _by_pk("energy_ev"),
+        "wall_time_seconds": _by_pk("time_s"),
+        "scf_steps": _by_pk("scf_steps"),
+    }
+    for child_pk, record in children.items():
+        for key, value in (record.data or {}).items():
+            output_params.setdefault(key, {})[child_pk] = value
+
+    return _generate_report_legacy(output_params, pk, workflow_type)
+
+
+def _generate_report_legacy(
+    output_params: Dict[str, Any], pk: int, workflow_type: str
+) -> str:
+    """Render a pre-schema (pk-keyed) ``output_parameters`` dict."""
     lines: List[str] = [
         render_report_header(
             title="Magmom WorkChain Report",

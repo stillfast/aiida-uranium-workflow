@@ -236,7 +236,9 @@ class QePwChildParser(ChildParser):
             result.natoms = None
 
         result.magnetic = {
-            "total_magnetization": para.get("total_magnetization"),
+            # Key names mirror the legacy gather layout so the report's
+            # per-backend tables keep reading the same top-level keys.
+            "magnetization": para.get("total_magnetization"),
             "absolute_magnetization": para.get("absolute_magnetization"),
             "atomic_magnetic_moments": para.get("atomic_magnetic_moments"),
         }
@@ -280,8 +282,9 @@ class FleurScfChildParser(ChildParser):
         except Exception:  # noqa: BLE001
             last_para = {}
         result.magnetic = {
-            "magnetic_vec_moments": last_para.get("magnetic_vec_moments"),
-            # Keep the Hartree energy for reports that show native units.
+            # Key names mirror the legacy gather layout (the report
+            # reads ``magnetization`` = per-atom 3-vectors).
+            "magnetization": last_para.get("magnetic_vec_moments"),
             "total_energy_hartree": energy_ha,
         }
 

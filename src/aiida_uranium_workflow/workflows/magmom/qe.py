@@ -119,9 +119,41 @@ class QeMagmomWorkChain(WorkChain):
 
 @calcfunction
 def parse_and_gather_qe_magmom_results(child_pks):
-    """Read each child's total magnetization / energy from its
-    ``output_parameters`` (aiida-qe parses ``total_magnetization``,
-    ``absolute_magnetization`` and per-species moments)."""
+    """Gather QE magmom child results into the report-side schema.
+
+    Each child is parsed by :class:`QePwChildParser` into a
+    :class:`ChildRecord` (pk / exit status / energy eV / time / atoms +
+    per-species moments under ``data``), stored under the
+    ``gather_schema`` layout defined in :mod:`utils.report.schema`.
+
+    If the new-schema path fails, falls back to the legacy pk-keyed
+    layout and logs a warning.
+    """
+    import logging
+
+    from aiida.orm import load_node
+
+    from aiida_uranium_workflow.utils.parsers.child import QePwChildParser
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
+    logger = logging.getLogger(__name__)
+    pks = child_pks.get_list()
+    try:
+        children = [QePwChildParser().parse(load_node(pk)) for pk in pks]
+        return orm.Dict(
+            GatherResult(backend="qe", children=children).to_dict()
+        )
+    except Exception as exc:  # noqa: BLE001 — fall back to legacy layout
+        logger.warning(
+            "magmom gather (qe): new-schema parse failed (%s); "
+            "falling back to legacy layout",
+            exc,
+        )
+        return _gather_qe_magmom_legacy(child_pks)
+
+
+def _gather_qe_magmom_legacy(child_pks) -> orm.Dict:
+    """Legacy pk-keyed gather layout (pre-schema WorkChain nodes)."""
     from aiida.orm import load_node
 
     magnetization = {}

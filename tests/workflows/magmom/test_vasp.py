@@ -120,14 +120,21 @@ def test_child_inputs_metadata_label_structure():
 
 
 def test_parse_and_gather_magmom_results(aiida_profile_clean):
-    """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs."""
+    """Test the `parse_and_gather_magmom_results` calcfunction with empty inputs.
+
+    The gather result must satisfy the report-side schema contract
+    (:class:`GatherResult`): an empty sweep stores no children but still
+    round-trips through ``GatherResult.from_output_params``.
+    """
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
     child_pks = orm.List([])
 
     result = parse_and_gather_magmom_results(child_pks=child_pks)
 
     assert isinstance(result, orm.Dict)
     result_dict = result.get_dict()
-    assert "magnetization" in result_dict
-    assert "site_magnetization" in result_dict
-    assert result_dict["magnetization"] == {}
-    assert result_dict["site_magnetization"] == {}
+    gather = GatherResult.from_output_params(result_dict)
+    assert gather is not None
+    assert gather.backend == "vasp"
+    assert gather.children == []

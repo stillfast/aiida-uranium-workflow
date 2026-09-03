@@ -178,7 +178,8 @@ class TestQePwChildParser:
         assert result.energy_ev == -55.0
         assert result.time_s == 42.5
         assert result.natoms == 2
-        assert result.magnetic["total_magnetization"] == 2.0
+        # ``magnetization`` mirrors the legacy gather key (= total_magnetization).
+        assert result.magnetic["magnetization"] == 2.0
         assert result.magnetic["absolute_magnetization"] == 4.0
         assert result.magnetic["atomic_magnetic_moments"] == [1.0, 1.0]
 
@@ -208,7 +209,9 @@ class TestFleurScfChildParser:
 
         assert result.energy_ev == pytest.approx(-2.0 * parser.HA_TO_EV)
         assert result.time_s == 60.0
-        assert result.magnetic["magnetic_vec_moments"] == [[0.0, 0.0, 4.0]]
+        # ``magnetization`` mirrors the legacy gather key
+        # (= magnetic_vec_moments); Hartree energy kept for native units.
+        assert result.magnetic["magnetization"] == [[0.0, 0.0, 4.0]]
         assert result.magnetic["total_energy_hartree"] == -2.0
 
 

@@ -163,11 +163,42 @@ class VaspMagmomWorkChain(WorkChain):
 
 @calcfunction
 def parse_and_gather_magmom_results(child_pks):
-    """Parse the magnetism outputs of each child VASP calculation and gather them.
+    """Gather magmom child results into the report-side schema.
 
-    The ``misc`` output of a VASP calculation exposes ``magnetization`` (total
-    magnetization) and ``site_magnetization`` (per-site magnetization).
+    Each child is parsed by :class:`VaspChildParser` into a
+    :class:`ChildRecord` (pk / exit status / energy eV / time / scf
+    steps / atoms + ``magnetization`` / ``site_magnetization`` under
+    ``data``), stored under the ``gather_schema`` layout defined in
+    :mod:`utils.report.schema`.
+
+    If the new-schema path fails, falls back to the legacy pk-keyed
+    layout and logs a warning.
     """
+    import logging
+
+    from aiida.orm import load_node
+
+    from aiida_uranium_workflow.utils.parsers.child import VaspChildParser
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
+    logger = logging.getLogger(__name__)
+    pks = child_pks.get_list()
+    try:
+        children = [VaspChildParser().parse(load_node(pk)) for pk in pks]
+        return orm.Dict(
+            GatherResult(backend="vasp", children=children).to_dict()
+        )
+    except Exception as exc:  # noqa: BLE001 — fall back to legacy layout
+        logger.warning(
+            "magmom gather (vasp): new-schema parse failed (%s); "
+            "falling back to legacy layout",
+            exc,
+        )
+        return _gather_magmom_legacy(child_pks)
+
+
+def _gather_magmom_legacy(child_pks) -> orm.Dict:
+    """Legacy pk-keyed gather layout (pre-schema WorkChain nodes)."""
     from aiida.orm import load_node
 
     from aiida_uranium_workflow.utils.parsers import fetch_summary

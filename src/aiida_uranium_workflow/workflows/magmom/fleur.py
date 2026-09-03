@@ -189,13 +189,49 @@ class FleurMagmomWorkChain(WorkChain):
 
 @calcfunction
 def parse_and_gather_magmom_results(child_pks, magmom_configs):
-    """Parse the magnetism outputs of each child FLEUR SCF and gather them.
+    """Gather FLEUR magmom child results into the report-side schema.
 
-    ``output_scf_wc_para`` carries ``total_energy`` (Hartree) plus the
-    last_calc ``output_parameters`` (masci-tools out.xml parse) which
-    carries ``magnetic_vec_moments`` (per-atom 3-vectors, from
-    ``<globalMagMoment vec="…"/>``) for non-collinear runs.
+    Each child is parsed by :class:`FleurScfChildParser` into a
+    :class:`ChildRecord` (energy eV / time / status + per-atom
+    ``magnetization`` / ``total_energy_hartree`` under ``data``). The
+    workflow-level config label (e.g. ``"FM"``) is not a child quantity
+    — it is attached per record from ``magmom_configs``.
+
+    If the new-schema path fails, falls back to the legacy pk-keyed
+    layout and logs a warning.
     """
+    import logging
+
+    from aiida.orm import load_node
+
+    from aiida_uranium_workflow.utils.parsers.child import FleurScfChildParser
+    from aiida_uranium_workflow.utils.report.schema import GatherResult
+
+    logger = logging.getLogger(__name__)
+    pks = child_pks.get_list()
+    configs = magmom_configs.get_list()
+    try:
+        children = []
+        for idx, pk in enumerate(pks):
+            record = FleurScfChildParser().parse(load_node(pk))
+            record.data["config_labels"] = str(
+                configs[idx].get("label") if idx < len(configs) else f"case{idx}"
+            )
+            children.append(record)
+        return orm.Dict(
+            GatherResult(backend="fleur", children=children).to_dict()
+        )
+    except Exception as exc:  # noqa: BLE001 — fall back to legacy layout
+        logger.warning(
+            "magmom gather (fleur): new-schema parse failed (%s); "
+            "falling back to legacy layout",
+            exc,
+        )
+        return _gather_magmom_legacy(child_pks, magmom_configs)
+
+
+def _gather_magmom_legacy(child_pks, magmom_configs) -> orm.Dict:
+    """Legacy pk-keyed gather layout (pre-schema WorkChain nodes)."""
     from aiida.orm import load_node
 
     magnetization = {}

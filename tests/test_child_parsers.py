@@ -52,7 +52,7 @@ class TestParserBaseBehaviour:
         assert result.status is None
         assert result.finished_ok is False
         # No outputs were touched — magnetic stays empty.
-        assert result.magnetic == {}
+        assert result.data == {}
         assert result.energy_ev is None
 
     def test_exit_status_captured(self):
@@ -112,9 +112,9 @@ class TestAbacusChildParser:
         assert result.time_s == 12.3
         assert result.scf_steps == 18
         assert result.natoms == 2
-        assert result.magnetic["magnetism"] == [[0.0], [1.0]]
-        assert result.magnetic["final_magnetism"] == 1.0
-        assert result.magnetic["nspin"] == 2
+        assert result.data["magnetism"] == [[0.0], [1.0]]
+        assert result.data["final_magnetism"] == 1.0
+        assert result.data["nspin"] == 2
 
 
 class TestVaspChildParser:
@@ -143,8 +143,8 @@ class TestVaspChildParser:
 
         assert result.energy_ev == -200.0
         assert result.time_s == 99.0
-        assert result.magnetic["magnetization"] == 3.1
-        assert result.magnetic["site_magnetization"] == {"sphere": {"x": {}}}
+        assert result.data["magnetization"] == 3.1
+        assert result.data["site_magnetization"] == {"sphere": {"x": {}}}
 
 
 class TestQePwChildParser:
@@ -160,6 +160,7 @@ class TestQePwChildParser:
                     {
                         "energy": -55.0,  # already eV (aiida-qe converts)
                         "wall_time_seconds": 42.5,
+                        "total_number_of_scf_iterations": 8,
                         "total_magnetization": 2.0,
                         "absolute_magnetization": 4.0,
                         "atomic_magnetic_moments": [1.0, 1.0],
@@ -178,10 +179,46 @@ class TestQePwChildParser:
         assert result.energy_ev == -55.0
         assert result.time_s == 42.5
         assert result.natoms == 2
-        # ``magnetization`` mirrors the legacy gather key (= total_magnetization).
-        assert result.magnetic["magnetization"] == 2.0
-        assert result.magnetic["absolute_magnetization"] == 4.0
-        assert result.magnetic["atomic_magnetic_moments"] == [1.0, 1.0]
+        # scf steps come from aiida-qe's top-level iteration counter.
+        assert result.scf_steps == 8
+        # Collinear run: ``magnetization`` = total_magnetization.
+        assert result.data["magnetization"] == 2.0
+        assert result.data["absolute_magnetization"] == 4.0
+        assert result.data["atomic_magnetic_moments"] == [1.0, 1.0]
+
+    def test_soc_cell_magnetization_uses_absolute(self):
+        """SOC runs leave total_magnetization at 0.0 in aiida-qe; the
+        meaningful cell magnetisation is absolute_magnetization."""
+        from aiida_uranium_workflow.utils.parsers.child import (
+            QePwChildParser,
+        )
+
+        node = _fake_node(
+            pk=4,
+            outputs=SimpleNamespace(
+                output_parameters=_misc_dict(
+                    {
+                        "energy": -27051.0,
+                        "non_colinear_calculation": True,
+                        "spin_orbit_calculation": True,
+                        "total_magnetization": 0.0,
+                        "absolute_magnetization": 1.3687074325791,
+                        "total_number_of_scf_iterations": 14,
+                    }
+                )
+            ),
+        )
+        node.inputs = SimpleNamespace(
+            pw=SimpleNamespace(
+                structure=SimpleNamespace(sites=[object(), object()])
+            )
+        )
+
+        result = QePwChildParser().parse(node)
+
+        assert result.scf_steps == 14
+        assert result.data["magnetization"] == 1.3687074325791
+        assert result.data["absolute_magnetization"] == 1.3687074325791
 
 
 class TestFleurScfChildParser:
@@ -211,8 +248,8 @@ class TestFleurScfChildParser:
         assert result.time_s == 60.0
         # ``magnetization`` mirrors the legacy gather key
         # (= magnetic_vec_moments); Hartree energy kept for native units.
-        assert result.magnetic["magnetization"] == [[0.0, 0.0, 4.0]]
-        assert result.magnetic["total_energy_hartree"] == -2.0
+        assert result.data["magnetization"] == [[0.0, 0.0, 4.0]]
+        assert result.data["total_energy_hartree"] == -2.0
 
 
 class TestChildParserRegistry:

@@ -326,21 +326,26 @@ class TestMagmomWallTimeTable:
         assert "No data" in generate_magmom_wall_time_table({})
 
 
-class TestMagmomReportHasThreeTables:
-    def test_all_three_sections_present(self) -> None:
+class TestMagmomReportSections:
+    def test_overview_and_matrix_only(self) -> None:
+        """Magmom reports emit Summary / Overview / Magnetism Matrix —
+        the legacy per-child status / energy / wall-time sections are
+        redundant with Overview and must not be re-emitted."""
         params = {
             "status": MAGMOM_STATUS,
             "final_energy": MAGMOM_ENERGY,
             "wall_time_seconds": MAGMOM_TIME,
         }
         report = generate_magmom_report(params, pk=1, workflow_type="abacus")
-        assert "## Calculation Status" in report
-        assert "## Final Energy" in report
-        assert "## Wall Time [s]" in report
-        # Each table renders the right values.
-        assert "| 1 | 0 |" in report  # status row
+        assert "## Overview" in report
+        assert "## Magnetism Matrix" in report
+        assert "## Calculation Status" not in report
+        assert "## Final Energy" not in report
+        assert "## Wall Time [s]" not in report
+        # Overview rows carry energy / time / exit.
         assert "-123.450000" in report  # energy row
         assert "12.500" in report  # time row
+        assert "| 0 |" in report  # exit codes
 
 
 # ---------------------------------------------------------------------------

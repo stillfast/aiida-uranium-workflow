@@ -67,6 +67,12 @@ class ChildRecord:
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "ChildRecord":
+        # Legacy children (pre-unification parser) stored the backend
+        # payload under ``magnetic``; accept it so old nodes still
+        # render their magnetism columns.
+        payload = raw.get("data")
+        if payload is None:
+            payload = raw.get("magnetic")
         return cls(
             pk=int(raw["pk"]),
             status=raw.get("status"),
@@ -75,7 +81,7 @@ class ChildRecord:
             time_s=raw.get("time_s"),
             scf_steps=raw.get("scf_steps"),
             natoms=raw.get("natoms"),
-            data=dict(raw.get("data") or {}),
+            data=dict(payload or {}),
         )
 
 

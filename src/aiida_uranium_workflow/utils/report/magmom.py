@@ -214,10 +214,11 @@ def generate_magmom_matrix_table(
             pk: (output_params.get("atomic_magnetic_moments") or {}).get(pk)
             for pk in raw
         }
-        cell_total = {
-            pk: (v if isinstance(v, (list, tuple)) else [float(v)])
-            for pk, v in raw.items()
-        }
+        # QE reports the cell magnetisation as a scalar (μB per cell),
+        # even for SOC runs where aiida-qe leaves total_magnetization at
+        # 0 and the meaningful magnitude is absolute_magnetization. Keep
+        # scalars scalar so they render as ``+0.00``, not ``[+0.00]``.
+        cell_total = dict(raw)
     else:
         per_atom_final = {}
         raw = output_params.get("final_magnetism") or {}
@@ -366,6 +367,7 @@ def generate_summary_table(
     backend_keys = {
         "abacus": ("magnetism", "final_magnetism"),
         "vasp": ("magnetization", "site_magnetization"),
+        "qe": ("magnetization", "absolute_magnetization"),
         "fleur": ("magnetization", "total_energy_hartree"),
     }
     if workflow_type is not None and workflow_type in backend_keys:
@@ -454,7 +456,14 @@ def _generate_report_from_gather(gather, pk: int, workflow_type: str) -> str:
 def _generate_report_legacy(
     output_params: Dict[str, Any], pk: int, workflow_type: str
 ) -> str:
-    """Render a pre-schema (pk-keyed) ``output_parameters`` dict."""
+    """Render a pre-schema (pk-keyed) ``output_parameters`` dict.
+
+    Only three sections are emitted: Summary, Overview (energy / time /
+    scf steps / exit per child) and the Magnetism Matrix (E, ΔE,
+    M_cell). The legacy per-child status / energy / wall-time tables
+    duplicate what Overview already shows, so they are intentionally
+    omitted (per the magmom report review).
+    """
     lines: List[str] = [
         render_report_header(
             title="Magmom WorkChain Report",
@@ -476,30 +485,6 @@ def _generate_report_legacy(
         generate_magmom_matrix_table(output_params, workflow_type),
         "",
     ]
-
-    if "status" in output_params:
-        lines += [
-            "## Calculation Status",
-            "",
-            generate_status_table(output_params["status"]),
-            "",
-        ]
-
-    if "final_energy" in output_params and output_params["final_energy"]:
-        lines += [
-            "## Final Energy",
-            "",
-            generate_energy_table(output_params["final_energy"]),
-            "",
-        ]
-
-    if "wall_time_seconds" in output_params and output_params["wall_time_seconds"]:
-        lines += [
-            "## Wall Time [s]",
-            "",
-            generate_wall_time_table(output_params["wall_time_seconds"]),
-            "",
-        ]
 
     lines += [render_report_footer()]
 

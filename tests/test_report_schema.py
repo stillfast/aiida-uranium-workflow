@@ -162,7 +162,11 @@ class TestMagmomReportContract:
             "legacy" in str(w.message).lower() for w in caught.list
         )
         assert "## Magnetism Matrix" in report
-        assert "## Calculation Status" in report
+        # The three legacy per-child sections are folded into Overview;
+        # they must not be re-emitted as standalone sections.
+        assert "## Calculation Status" not in report
+        assert "## Final Energy" not in report
+        assert "## Wall Time [s]" not in report
 
     def test_schema_and_legacy_render_same_body(self):
         """The same data must produce the same tables whether the node

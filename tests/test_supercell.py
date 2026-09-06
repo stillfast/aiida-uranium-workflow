@@ -172,16 +172,50 @@ class TestReport:
         assert "scf pk" not in report
 
     def test_time_and_steps_default_to_dash(self):
-        """Rows without time / scf steps render dashes (legacy data)."""
+        """Rows without time / scf steps render dashes when no child is
+        reachable (legacy data, child fetch fails)."""
         out = {
             "workflow": "supercell",
             "cells": [
                 {"label": "1x1x1", "matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-                 "natoms": 2, "volume": 41.086, "energy": -27065.73},
+                 "natoms": 2, "volume": 41.086, "energy": -27065.73,
+                 "scf_pk": 999999},  # no such node -> fetch fails
             ],
         }
         report = generate_report(out, pk=7, workflow_type="abacus")
         assert "| — | — |" in report
+
+    def test_child_fetch_fills_missing_stats(self, monkeypatch):
+        """When the output dict lacks time/scf steps, the report fetches
+        them from the SCF child (scf_pk) instead of showing dashes."""
+        out = {
+            "workflow": "supercell",
+            "cells": [
+                {"label": "1x1x1", "matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                 "natoms": 2, "volume": 41.086, "energy": -27065.73,
+                 "scf_pk": 12345},
+            ],
+        }
+        fetched = {"called_with": []}
+
+        class _FakeChild:
+            pk = 12345
+
+        def _fake_fetch_summary(node, backend):
+            fetched["called_with"].append((node.pk, backend))
+            return {"energy_ev": -1.0, "time_s": 3600.0, "natoms": 2,
+                    "scf_steps": 42}
+
+        import aiida.orm as aiida_orm
+        import aiida_uranium_workflow.utils.parsers as parsers
+        import aiida_uranium_workflow.utils.report.supercell as report_mod
+
+        monkeypatch.setattr(aiida_orm, "load_node", lambda pk: _FakeChild())
+        monkeypatch.setattr(parsers, "fetch_summary", _fake_fetch_summary)
+
+        table = report_mod.generate_summary_table(out)
+        assert "| 3600.000 | 42 |" in table
+        assert fetched["called_with"] == [(12345, "abacus")]
 
     def test_empty(self):
         report = generate_report({"cells": []}, pk=1, workflow_type="abacus")

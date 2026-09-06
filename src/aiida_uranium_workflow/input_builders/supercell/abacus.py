@@ -62,6 +62,13 @@ class AbacusSupercellAdapter(SoftwareAdapter):
                 "parameters/supercell.yml."
             )
 
+        # Shared AbacusBaseWorkChain restart budget: how many times a
+        # failed per-supercell SCF is retried with adjusted settings.
+        # Per-supercell entries may override it (see the supercell
+        # workflow's ``_scf_inputs_for``).
+        if "max_iterations" in proto:
+            base["max_iterations"] = orm.Int(int(proto["max_iterations"]))
+
         inputs: dict[str, Any] = {
             "structure": structure,
             "base": base,

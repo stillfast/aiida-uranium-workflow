@@ -103,12 +103,14 @@ class TestAdapter:
             metadata={},
             workflow_data={
                 "abacus": {
+                    "max_iterations": 3,
                     "supercells": [
                         {"matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                          "label": "1x1x1", "kpoints_mesh": [11, 11, 11]},
                         {"matrix": [[2, 0, 0], [0, 2, 0], [0, 0, 2]],
                          "label": "2x2x2", "kpoints_mesh": [7, 7, 7],
-                         "scf_thr": 1e-6, "mixing_beta": 0.4},
+                         "scf_thr": 1e-6, "mixing_beta": 0.4,
+                         "max_iterations": 7},
                     ],
                 }
             },
@@ -117,10 +119,13 @@ class TestAdapter:
         structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
         inputs = adapter._build_workchain_inputs(structure)
         assert inputs["base"]["abacus"]["parameters"].get_dict()["input"]["calculation"] == "scf"
+        # Block-level restart budget flows into the shared base …
+        assert inputs["base"]["max_iterations"].value == 3
         cells = inputs["supercell_parameters"].get_dict()["supercells"]
         assert len(cells) == 2
         assert cells[1]["matrix"] == [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
         assert cells[1]["scf_thr"] == 1e-6
+        assert cells[1]["max_iterations"] == 7
         err = SupercellScfWorkChain.spec().inputs.validate(inputs)
         assert err is None, f"spec validation failed: {err}"
 
@@ -145,6 +150,55 @@ class TestAdapter:
         structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
         with pytest.raises(ValueError):
             adapter._build_workchain_inputs(structure)
+
+
+class TestScfInputsFor:
+    """Per-cell SCF input assembly (restart budget propagation)."""
+
+    @staticmethod
+    def _process():
+        # ``_scf_inputs_for`` only touches ``self.inputs.base`` and cell
+        # dicts — a bare instance suffices (no AiiDA instantiation).
+        from aiida_uranium_workflow.workflows.supercell.abacus import (
+            SupercellScfWorkChain,
+        )
+
+        return object.__new__(SupercellScfWorkChain)
+
+    @staticmethod
+    def _base():
+        from aiida import orm
+
+        return {
+            "abacus": {
+                "code": "fake",
+                "parameters": orm.Dict(dict={"input": {"nspin": 1}}),
+            },
+            "kpoints": orm.List(list=[1, 1, 1]),
+            "max_iterations": orm.Int(3),
+        }
+
+    def test_base_max_iterations_carries_over(self):
+        process = self._process()
+        cell = {"entry": {}, "label": "1x1x1", "structure": object()}
+        inputs = process._scf_inputs_for(cell, self._base())
+        # Block-level restart budget reaches the AbacusBaseWorkChain.
+        assert inputs["max_iterations"].value == 3
+
+    def test_per_cell_max_iterations_wins(self):
+        process = self._process()
+        cell = {"entry": {"max_iterations": 7}, "label": "2x2x2",
+                "structure": object()}
+        inputs = process._scf_inputs_for(cell, self._base())
+        assert inputs["max_iterations"].value == 7
+
+    def test_unset_defaults_to_plugin(self):
+        """No max_iterations anywhere → not passed → plugin default (5)."""
+        process = self._process()
+        base = {"abacus": {"parameters": None}}
+        cell = {"entry": {}, "label": "1x1x1", "structure": object()}
+        inputs = process._scf_inputs_for(cell, base)
+        assert "max_iterations" not in inputs
 
 
 class TestReport:

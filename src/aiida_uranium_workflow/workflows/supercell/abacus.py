@@ -152,8 +152,8 @@ class SupercellScfWorkChain(WorkChain):
 
         entry = cell["entry"]
         # Base top-level keys (kpoints / kpoints_distance / pseudo_family
-        # / …) carry over as-is; the per-supercell entry may override the
-        # k-points below.
+        # / max_iterations / …) carry over as-is; the per-supercell entry
+        # may override the k-points / restart count below.
         child_inputs = {k: v for k, v in base.items() if k != "abacus"}
 
         abacus = {}
@@ -176,6 +176,14 @@ class SupercellScfWorkChain(WorkChain):
         abacus["parameters"] = orm.Dict(dict=params)
         abacus["structure"] = cell["structure"]
         child_inputs["abacus"] = abacus
+
+        # AbacusBaseWorkChain restart budget (top-level input, not part
+        # of the SCF ``input`` block): how many times a failed SCF is
+        # retried with adjusted settings (scf_nmax / mixing_beta). A
+        # per-supercell ``max_iterations`` wins over the shared base
+        # (base-level value already carried over in ``child_inputs``).
+        if "max_iterations" in entry:
+            child_inputs["max_iterations"] = orm.Int(int(entry["max_iterations"]))
 
         # K-points: per-supercell mesh / distance wins over the base.
         if "kpoints_mesh" in entry:

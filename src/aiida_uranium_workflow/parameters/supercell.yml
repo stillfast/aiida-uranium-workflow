@@ -16,6 +16,12 @@
 #                kpoints_mesh / kpoints_distance, scf_thr, scf_nmax,
 #                mixing_beta, mixing_beta_mag, mixing_ndim,
 #                smearing_method, smearing_sigma, symmetry, ...
+#   max_iterations — optional restart budget of the per-supercell
+#                AbacusBaseWorkChain (how many times a failed SCF is
+#                retried with adjusted settings — scf_nmax → mixing_beta
+#                ladder). Also settable once for the whole protocol at
+#                the ``abacus`` block level. When unset the aiida-abacus
+#                plugin default of 5 applies; set 0 to disable restarts.
 #
 # NOTE on k-points: per fleur.md, the k-point DENSITY should stay the
 # same for the primitive cell and its supercells — halve the mesh as
@@ -91,6 +97,9 @@ test555:
 
 test888:
   abacus:
+    # Shared restart budget for all 8×8×8 cells below (per-cell
+    # ``max_iterations`` would override this).
+    max_iterations: 5
     supercells:
       # 8×8×8 (1024-atom) metallic cell. See the performance note at the
       # top: mixing_beta 0.4 + symmetry 0 would cut the wall time ~5×
@@ -140,15 +149,45 @@ test_sym:
         label: 8x8x8_sym0      # ← 区分
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
-        scf_nmax: 50
-        mixing_beta: 0.8
+        mixing_beta: 0.4
         mixing_ndim: 8
         symmetry: 0
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
         label: 8x8x8_sym1      # ← 区分
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
-        scf_nmax: 50
-        mixing_beta: 0.8
+        mixing_beta: 0.4
         mixing_ndim: 8
         symmetry: 1
+
+test_beta:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_beta0p3      # ← 区分
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.3
+        mixing_ndim: 8
+        symmetry: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_beta0p4      # ← 区分
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.4
+        mixing_ndim: 8
+        symmetry: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_beta0p5
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_beta0p6
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.6
+        mixing_ndim: 8
+        symmetry: 0

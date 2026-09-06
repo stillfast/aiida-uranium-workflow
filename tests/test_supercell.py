@@ -153,9 +153,11 @@ class TestReport:
             "workflow": "supercell",
             "cells": [
                 {"label": "1x1x1", "matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-                 "natoms": 2, "volume": 41.086, "energy": -27065.73, "scf_pk": 1},
+                 "natoms": 2, "volume": 41.086, "energy": -27065.73,
+                 "time_s": 120.5, "scf_steps": 21, "scf_pk": 1},
                 {"label": "2x2x2", "matrix": [[2, 0, 0], [0, 2, 0], [0, 0, 2]],
-                 "natoms": 16, "volume": 328.69, "energy": -27065.73 * 8, "scf_pk": 2},
+                 "natoms": 16, "volume": 328.69, "energy": -27065.73 * 8,
+                 "time_s": 3600.0, "scf_steps": 35, "scf_pk": 2},
             ],
         }
         report = generate_report(out, pk=7, workflow_type="abacus")
@@ -163,6 +165,23 @@ class TestReport:
         assert "| 1x1x1 |" in report
         assert "| 2x2x2 |" in report
         assert "41.086" in report
+        # time + scf steps columns present; scf pk column dropped.
+        assert "| time (s) | scf steps |" in report
+        assert "| 120.500 | 21 |" in report
+        assert "| 3600.000 | 35 |" in report
+        assert "scf pk" not in report
+
+    def test_time_and_steps_default_to_dash(self):
+        """Rows without time / scf steps render dashes (legacy data)."""
+        out = {
+            "workflow": "supercell",
+            "cells": [
+                {"label": "1x1x1", "matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                 "natoms": 2, "volume": 41.086, "energy": -27065.73},
+            ],
+        }
+        report = generate_report(out, pk=7, workflow_type="abacus")
+        assert "| — | — |" in report
 
     def test_empty(self):
         report = generate_report({"cells": []}, pk=1, workflow_type="abacus")

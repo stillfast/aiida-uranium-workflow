@@ -34,8 +34,9 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
         return "No supercell data available."
 
     lines = [
-        "| label | matrix | natoms | volume (Å³) | energy (eV) | scf pk |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| label | matrix | natoms | volume (Å³) | energy (eV) "
+        "| time (s) | scf steps |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for cell in cells:
         lines.append(
@@ -44,7 +45,8 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
             f"| {cell.get('natoms', '—')} "
             f"| {_fmt(cell.get('volume'))} "
             f"| {_fmt(cell.get('energy'))} "
-            f"| {cell.get('scf_pk', '—')} |"
+            f"| {_fmt(cell.get('time_s'), 3)} "
+            f"| {cell.get('scf_steps', '—')} |"
         )
     return "\n".join(lines)
 

@@ -210,15 +210,14 @@ class SupercellScfWorkChain(WorkChain):
         return None
 
     def collect_results(self):
-        """Collect energies / volumes and package the results Dict."""
+        """Collect energies / volumes / SCF stats and package results."""
+        from aiida_uranium_workflow.utils.parsers import fetch_summary
+
         results = {"workflow": "supercell", "backend": "abacus", "cells": []}
         for cell in self.ctx.cells:
             child = getattr(self.ctx, f"scf_{cell['idx']}")
-            try:
-                misc = child.outputs.misc.get_dict()
-                energy = misc.get("total_energy")
-            except (AttributeError, KeyError):
-                energy = None
+            summary = fetch_summary(child, "abacus")
+            energy = summary.get("energy_ev")
             if energy is None:
                 self.report(f"supercell {cell['label']} has no total_energy")
                 return self.exit_codes.ERROR_PARSER
@@ -233,6 +232,8 @@ class SupercellScfWorkChain(WorkChain):
                     "volume_units": "A^3",
                     "energy": float(energy),
                     "energy_units": "eV",
+                    "time_s": summary.get("time_s"),
+                    "scf_steps": summary.get("scf_steps"),
                     "scf_pk": child.pk,
                 }
             )

@@ -20,13 +20,31 @@ yeesuan_ys:
 # needed ~50 min per electronic iteration and did not converge within
 # 12 h; the partition accepts up to 48 h (verified with the manual
 # Num_250 slurm run), so give it the full 48 h.
-yeesuan_ys_48h:
+yeesuan_ys_24h:
   options:
     resources:
       num_machines: 1
       num_mpiprocs_per_machine: 56
       tot_num_mpiprocs: 56
-    max_wallclock_seconds: 172800
+    max_wallclock_seconds: 86400
+    queue_name: "d2_ys"
+    withmpi: true
+# d2_ys is a 1.5 TB-per-node fat-memory partition (MEMORY 1545000 MB per
+# node, verified via `sinfo -p d2_ys`). Large supercells (10⁴+ atoms,
+# LCAO) OOM at the default per-job memory — ask for the full node memory
+# explicitly. ``max_memory_kb`` is AiiDA's scheduler option (the Slurm
+# plugin writes ``--mem=<kB//1024>`` in MB); 1.5 TB = 1500·1024·1024 kB.
+# ``resources`` keeps 56 ranks on one node: the node's 1.5 TB is ample
+# and ABACUS's LCAO diagonalisation (genelpa/ELPA) parallelises in-node;
+# scale cores via num_mpiprocs_per_machine / num_machines, not memory.
+yeesuan_ys_1w:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_memory_kb: 1572864000  # 1.5 TB per node → --mem=1536000 (MB)
+    max_wallclock_seconds: 172800  # 48 h
     queue_name: "d2_ys"
     withmpi: true
 xinghe:

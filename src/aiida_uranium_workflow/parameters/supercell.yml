@@ -16,12 +16,10 @@
 #                kpoints_mesh / kpoints_distance, scf_thr, scf_nmax,
 #                mixing_beta, mixing_beta_mag, mixing_ndim,
 #                smearing_method, smearing_sigma, symmetry, ...
-#   max_iterations — optional restart budget of the per-supercell
-#                AbacusBaseWorkChain (how many times a failed SCF is
-#                retried with adjusted settings — scf_nmax → mixing_beta
-#                ladder). Also settable once for the whole protocol at
-#                the ``abacus`` block level. When unset the aiida-abacus
-#                plugin default of 5 applies; set 0 to disable restarts.
+#
+# NOTE on restarts: the per-supercell AbacusBaseWorkChain is submitted
+# with ``max_iterations = 0`` (see workflows/supercell/abacus.py) — a
+# failed supercell SCF is *not* auto-restarted by the plugin.
 #
 # NOTE on k-points: per fleur.md, the k-point DENSITY should stay the
 # same for the primitive cell and its supercells — halve the mesh as
@@ -97,9 +95,6 @@ test555:
 
 test888:
   abacus:
-    # Shared restart budget for all 8×8×8 cells below (per-cell
-    # ``max_iterations`` would override this).
-    max_iterations: 5
     supercells:
       # 8×8×8 (1024-atom) metallic cell. See the performance note at the
       # top: mixing_beta 0.4 + symmetry 0 would cut the wall time ~5×
@@ -190,4 +185,29 @@ test_beta:
         scf_thr: 1e-4
         mixing_beta: 0.6
         mixing_ndim: 8
+        symmetry: 0
+
+test_ndim:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_dim4
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 4
+        symmetry: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_dim8
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_dim12
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 12
         symmetry: 0

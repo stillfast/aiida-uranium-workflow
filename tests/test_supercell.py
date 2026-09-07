@@ -103,14 +103,12 @@ class TestAdapter:
             metadata={},
             workflow_data={
                 "abacus": {
-                    "max_iterations": 3,
                     "supercells": [
                         {"matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                          "label": "1x1x1", "kpoints_mesh": [11, 11, 11]},
                         {"matrix": [[2, 0, 0], [0, 2, 0], [0, 0, 2]],
                          "label": "2x2x2", "kpoints_mesh": [7, 7, 7],
-                         "scf_thr": 1e-6, "mixing_beta": 0.4,
-                         "max_iterations": 7},
+                         "scf_thr": 1e-6, "mixing_beta": 0.4},
                     ],
                 }
             },
@@ -119,13 +117,13 @@ class TestAdapter:
         structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
         inputs = adapter._build_workchain_inputs(structure)
         assert inputs["base"]["abacus"]["parameters"].get_dict()["input"]["calculation"] == "scf"
-        # Block-level restart budget flows into the shared base …
-        assert inputs["base"]["max_iterations"].value == 3
+        # The adapter does not inject a restart budget — the workflow
+        # forces max_iterations=0 on the child AbacusBaseWorkChain.
+        assert "max_iterations" not in inputs["base"]
         cells = inputs["supercell_parameters"].get_dict()["supercells"]
         assert len(cells) == 2
         assert cells[1]["matrix"] == [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
         assert cells[1]["scf_thr"] == 1e-6
-        assert cells[1]["max_iterations"] == 7
         err = SupercellScfWorkChain.spec().inputs.validate(inputs)
         assert err is None, f"spec validation failed: {err}"
 
@@ -153,7 +151,7 @@ class TestAdapter:
 
 
 class TestScfInputsFor:
-    """Per-cell SCF input assembly (restart budget propagation)."""
+    """Per-cell SCF input assembly: restart budget forced to 0."""
 
     @staticmethod
     def _process():
@@ -175,30 +173,27 @@ class TestScfInputsFor:
                 "parameters": orm.Dict(dict={"input": {"nspin": 1}}),
             },
             "kpoints": orm.List(list=[1, 1, 1]),
-            "max_iterations": orm.Int(3),
         }
 
-    def test_base_max_iterations_carries_over(self):
+    def test_max_iterations_forced_to_zero(self):
+        """The child AbacusBaseWorkChain gets max_iterations=0 (no
+        auto-restart of a failed supercell SCF)."""
         process = self._process()
         cell = {"entry": {}, "label": "1x1x1", "structure": object()}
         inputs = process._scf_inputs_for(cell, self._base())
-        # Block-level restart budget reaches the AbacusBaseWorkChain.
-        assert inputs["max_iterations"].value == 3
+        assert inputs["max_iterations"].value == 0
 
-    def test_per_cell_max_iterations_wins(self):
-        process = self._process()
-        cell = {"entry": {"max_iterations": 7}, "label": "2x2x2",
-                "structure": object()}
-        inputs = process._scf_inputs_for(cell, self._base())
-        assert inputs["max_iterations"].value == 7
+    def test_zero_overrides_base_value(self):
+        """Even if the shared base carries a restart budget, the child
+        still receives 0."""
+        from aiida import orm
 
-    def test_unset_defaults_to_plugin(self):
-        """No max_iterations anywhere → not passed → plugin default (5)."""
         process = self._process()
-        base = {"abacus": {"parameters": None}}
+        base = self._base()
+        base["max_iterations"] = orm.Int(5)
         cell = {"entry": {}, "label": "1x1x1", "structure": object()}
         inputs = process._scf_inputs_for(cell, base)
-        assert "max_iterations" not in inputs
+        assert inputs["max_iterations"].value == 0
 
 
 class TestReport:

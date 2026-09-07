@@ -195,6 +195,20 @@ class TestScfInputsFor:
         inputs = process._scf_inputs_for(cell, base)
         assert inputs["max_iterations"].value == 0
 
+    def test_smearing_sigma_override_reaches_input(self):
+        """A per-supercell smearing_sigma must land in the child's ABACUS
+        ``input`` block (sigma scans run one entry per sigma)."""
+        process = self._process()
+        base = self._base()
+        cell = {"entry": {"smearing_sigma": 0.015, "scf_thr": 1e-4},
+                "label": "8x8x8_sigma0p015", "structure": object()}
+        inputs = process._scf_inputs_for(cell, base)
+        pinput = inputs["abacus"]["parameters"].get_dict()["input"]
+        assert pinput["smearing_sigma"] == 0.015
+        assert pinput["scf_thr"] == 1e-4
+        # The rest of the base SCF input survives.
+        assert pinput["nspin"] == 1
+
 
 class TestReport:
     def test_table_renders_rows(self):

@@ -33,16 +33,24 @@ yeesuan_ys_24h:
 # node, verified via `sinfo -p d2_ys`). Large supercells (10⁴+ atoms,
 # LCAO) OOM at the default per-job memory — ask for the full node memory
 # explicitly. ``max_memory_kb`` is AiiDA's scheduler option (the Slurm
-# plugin writes ``--mem=<kB//1024>`` in MB); 1.5 TB = 1500·1024·1024 kB.
-# ``resources`` keeps 56 ranks on one node: the node's 1.5 TB is ample
-# and ABACUS's LCAO diagonalisation (genelpa/ELPA) parallelises in-node;
-# scale cores via num_mpiprocs_per_machine / num_machines, not memory.
+# plugin writes ``--mem=<kB//1024>`` in MB and it is *per node*); 1.5 TB
+# = 1500·1024·1024 kB.
+#
+# The 11k-atom / 303k-basis LCAO SCF needs ~1.5 TB across all ranks
+# (DMK ~25 GB/rank + dense-diagonalisation workspace); a single 1.5 TB
+# node is exactly saturated and the kernel OOM-kills the job. Scale out
+# instead: the per-rank footprint stays ~constant, so N fat nodes give
+# N×1.5 TB. ``num_machines`` = number of d2_ys nodes, 56 ranks each
+# (ABACUS LCAO diagonalisation is MPI-parallel across nodes via
+# genelpa/ELPA; ``--mem`` stays 1.5 TB per node).
+# Start with 2 nodes (3 TB total) to validate the multi-node MPI path;
+# raise num_machines if the per-rank footprint does not shrink enough.
 yeesuan_ys_1w:
   options:
     resources:
-      num_machines: 1
+      num_machines: 2
       num_mpiprocs_per_machine: 56
-      tot_num_mpiprocs: 56
+      tot_num_mpiprocs: 112
     max_memory_kb: 1572864000  # 1.5 TB per node → --mem=1536000 (MB)
     max_wallclock_seconds: 172800  # 48 h
     queue_name: "d2_ys"

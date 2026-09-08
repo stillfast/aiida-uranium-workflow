@@ -211,3 +211,56 @@ test_ndim:
         mixing_beta: 0.5
         mixing_ndim: 12
         symmetry: 0
+
+test_sigma:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_sigma0p005
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        smearing_sigma: 0.005
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_sigma0p0074
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        smearing_sigma: 0.0073529411764706
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_sigma0p015
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        smearing_sigma: 0.015
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_sigma0p03
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-4
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        smearing_sigma: 0.03
+
+test_1w:
+  abacus:
+    supercells:
+      # ~11.7k-atom LCAO SCF. genelpa/ELPA crashed after INIT SCF on
+      # multi-node runs (non-memory); ks_solver=cg (iterative) avoids the
+      # ELPA 2D-blocked diagonaliser entirely — slower per SCF step but
+      # robust. Remove ks_solver once genelpa is validated at this scale.
+      - matrix: [[18, 0, 0], [0, 18, 0], [0, 0, 18]]
+        label: 18x18x18
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-3
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        smearing_sigma: 0.015
+        ks_solver: cg

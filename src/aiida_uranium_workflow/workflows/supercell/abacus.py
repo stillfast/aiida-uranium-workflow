@@ -40,6 +40,8 @@ _SCF_OVERRIDE_KEYS = (
     "symmetry",  # 0 disables rhog_symmetry — a known ABACUS bottleneck
     # on large supercells (density symmetrization can exceed 80% of the
     # wall time; with a 1×1×1 k-mesh it is pure overhead).
+    "gamma_only",  # 1 → real-matrix fast path for a single Gamma point
+    "ks_solver",  # genelpa/elpa/scalapack_gvx/cg/dav — diagonaliser
 )
 
 

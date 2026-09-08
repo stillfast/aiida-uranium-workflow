@@ -252,9 +252,11 @@ test_1w:
   abacus:
     supercells:
       # ~11.7k-atom LCAO SCF. genelpa/ELPA crashed after INIT SCF on
-      # multi-node runs (non-memory); ks_solver=cg (iterative) avoids the
-      # ELPA 2D-blocked diagonaliser entirely — slower per SCF step but
-      # robust. Remove ks_solver once genelpa is validated at this scale.
+      # multi-node runs (non-memory); ks_solver=cg_in_lcao (iterative
+      # LCAO solver) avoids the ELPA 2D-blocked diagonaliser entirely —
+      # slower per SCF step but robust. Remove ks_solver once genelpa is
+      # validated at this scale. NOTE: the LCAO solver keyword is
+      # ``cg_in_lcao`` (plain ``cg`` is the PW solver and ABACUS aborts).
       - matrix: [[18, 0, 0], [0, 18, 0], [0, 0, 18]]
         label: 18x18x18
         kpoints_mesh: [1, 1, 1]
@@ -263,4 +265,4 @@ test_1w:
         mixing_ndim: 8
         symmetry: 0
         smearing_sigma: 0.015
-        ks_solver: cg
+        ks_solver: cg_in_lcao

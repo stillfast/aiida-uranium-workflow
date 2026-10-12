@@ -33,8 +33,9 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
    `--data-dir DIR` / `ConfigLoader(data_root=)` → `$AIIDA_URANIUM_DATA` →
    从 input.json 向上找最近的含 `parameters/` 的目录 → 包内兜底。
    **本机活跃数据根是 `aiida-uranium-scripts/`**（`.../test/<method>/input.json` 的祖先），
-   包内 `src/aiida_uranium_workflow/{parameters,static}` 只作**兜底快照**（不在活跃路径上）：
-   **改参数请改数据根那份**，改包内那份不生效（解析器会在包内文件比数据根新时告警）。
+   包内 `src/aiida_uranium_workflow/{parameters,static}` 只作**参考 / 测试用例**（顺带在
+   找不到数据根时兜底，不在活跃路径上）：**改参数请改数据根那份**，改包内那份不生效
+   （解析器会在包内文件比数据根新时告警，见 `snapshot_drift`）。
    实现见 `utils/common.py:resolve_data_root` / `snapshot_drift`。
 8. **`parameters/` 不同步到远端仓库**：数据根里的 preset、`static/*.yml`（队列名、结构表）
    **不纳入 git 提交/推送**——本地改动原样留在开发机上，**除非用户当次明确说明要同步**。

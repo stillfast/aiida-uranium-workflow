@@ -139,7 +139,9 @@ Key conventions (see `AGENT.md` for the full spec):
 
   Put your own `parameters/` + `static/` next to your `input.json`s (e.g. in
   a scripts repository) and they are picked up automatically; the packaged
-  copy is only a fallback for inputs without a data root of their own.
+  copy is the **reference / test fixture** (it also serves as the fallback
+  for inputs that have no data root of their own) — edit the data root, not
+  the package.
   `aiida-uranium check -i input.json` prints the root it used, and warns
   when a *packaged* table is newer than the active one — the signature of
   having edited the wrong copy.

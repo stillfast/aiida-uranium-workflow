@@ -65,7 +65,22 @@ class FleurDefectsWorkChain(DefectsWorkChainBase):
     def _wc_cls(self):
         return _FleurRelaxWorkChain if self._mode() == "relax" else _FleurScfWorkChain
 
-    def _make_calc_inputs(self, structure, label: str) -> Dict[str, Any]:
+    def _make_calc_inputs(
+        self, structure, label: str, kpoints=None, scf_overrides=None
+    ) -> Dict[str, Any]:
+        if kpoints is not None:
+            raise ValueError(
+                "per-cell 'kpoints_mesh'/'kpoints_distance' is only supported "
+                "by the ABACUS backend — set the FLEUR k-mesh in the FLEUR "
+                "preset (parameters/fleur/scf.yml) instead."
+            )
+        if scf_overrides:
+            raise ValueError(
+                "per-cell SCF overrides "
+                f"{sorted(scf_overrides)} are ABACUS INPUT keys and are only "
+                "supported by the ABACUS backend — put them in the FLEUR "
+                "preset (parameters/fleur/scf.yml) instead."
+            )
         base = dict(self.inputs.base) if "base" in self.inputs else {}
 
         if self._mode() == "relax":

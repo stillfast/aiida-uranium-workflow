@@ -10,7 +10,7 @@ for
 
 from __future__ import annotations
 
-from ..base import AdaptedInputs, SoftwareAdapter
+from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
 from typing import Any, Dict
 
 
@@ -29,7 +29,9 @@ class VaspElasticAdapter(SoftwareAdapter):
 
         entry = self.software_params
         incar = copy.deepcopy(entry.get("parameters", {}).get("incar", {}))
-        options = self.metadata.get("options", {})
+        options = filter_scheduler_options(
+            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+        )
 
         inputs: dict[str, Any] = {
             "code": orm.load_code(self.code_label),

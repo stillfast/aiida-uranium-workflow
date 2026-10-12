@@ -20,6 +20,7 @@ from . import magmom  # noqa: F401  -- triggers self-registration
 from . import banddos  # noqa: F401  -- triggers self-registration
 from . import relax  # noqa: F401  -- triggers self-registration
 from . import elastic  # noqa: F401  -- triggers self-registration
+from . import elastic_cubic  # noqa: F401  -- triggers self-registration
 from . import phonopy  # noqa: F401  -- triggers self-registration
 from . import eos  # noqa: F401  -- triggers self-registration
 from . import defects  # noqa: F401  -- triggers self-registration

@@ -100,19 +100,44 @@ def build_cal_json(
     where ``key`` is the second-level dict name (``"smear"`` for abacus
     smear, ``"vasp"`` for vasp smear, …) and ``identifier`` is the
     WorkChain UUID string (or, for backwards-compat, the integer pk).
-    Jobs with the same ``(backend, key, preset_name)`` overwrite one
-    another — this is intentional, callers usually only have one
-    WorkChain per preset.
+
+    When one preset is submitted for **several structures** (a
+    ``static.structure`` list, e.g. a twist-angle / supercell-size scan)
+    the leaf key is ``"<preset>@<structure>"`` so that each structure
+    keeps its own identifier. Without the suffix every later structure
+    would overwrite the previous one — a 12-structure scan would record
+    a single UUID. The plain ``<preset>`` key is unchanged whenever a
+    preset/structure pair is unique, so single-structure output.json
+    files are byte-for-byte the same as before.
     """
+    from collections import Counter
+
+    jobs = list(submitted)
+    # ``(backend, key, preset_name)`` appearing more than once ⇒ the
+    # preset was run for multiple structures → disambiguate by structure.
+    seen = Counter(
+        (
+            job.backend,
+            (backend_to_key or {}).get(job.backend)
+            or _default_key(workflow, job.backend),
+            job.preset_name,
+        )
+        for job in jobs
+    )
+
     out: "OrderedDict[str, Any]" = OrderedDict()
     out["workflow"] = workflow
     mapping = backend_to_key or {}
-    for job in submitted:
+    for job in jobs:
         backend = job.backend
         key = mapping.get(backend, _default_key(workflow, backend))
         backend_dict = out.setdefault(backend, OrderedDict())
         key_dict = backend_dict.setdefault(key, OrderedDict())
-        key_dict[job.preset_name] = _node_identifier(job)
+        name = job.preset_name
+        structure = getattr(job, "structure_name", "") or ""
+        if seen[(backend, key, job.preset_name)] > 1 and structure:
+            name = f"{name}@{structure}"
+        key_dict[name] = _node_identifier(job)
     return out
 
 

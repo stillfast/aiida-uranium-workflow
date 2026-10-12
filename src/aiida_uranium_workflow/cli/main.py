@@ -56,6 +56,7 @@ from aiida_uranium_workflow.utils.copy_remote import (
     load_copy_plan,
 )
 
+import re
 import sys
 from pathlib import Path
 
@@ -357,6 +358,13 @@ _EXAMPLE_INPUTS: dict[str, dict] = {
         "profile": "aiida_profile",
         "code": {"abacus": "abacus@<HOST>"},
     },
+    "elastic_cubic": {
+        "workflow": "elastic_cubic",
+        "parameters": {"abacus": {"scf": ["lcao_r"]}, "elastic_cubic": "test"},
+        "static": {"structure": "bcc-uranium-0K", "metadata": "yunhe"},
+        "profile": "aiida_profile",
+        "code": {"abacus": "abacus@<HOST>"},
+    },
     "eos": {
         "workflow": "eos",
         "parameters": {"abacus": {"scf": ["lcao_r"]}, "eos": "test"},
@@ -389,20 +397,136 @@ _EXAMPLE_INPUTS: dict[str, dict] = {
 
 
 def _check(args) -> int:
-    """Dry-run: parse + validate the input.json, print the execution plan.
+    """Check a configuration or a submitted run.
 
-    Beyond the coarse backend/preset summary, prints the *resolved*
-    parameter dicts that will reach each WorkChain — the per-backend SCF
-    preset (``software_params`` entry), the parsed protocol
-    (``workflow_data``) and the scheduler options from ``metadata`` — so
-    parameter mistakes are visible before anything is submitted.
+    * **input.json** — dry-run: parse + validate the configuration and
+      print the execution plan (resolved SCF presets, protocol data,
+      scheduler options) without submitting anything.
+    * **output.json** — status check: every WorkChain identifier in the
+      file (the ``{backend: {key: {preset: uuid}}}`` layout written by
+      ``run``) is resolved against the live profile and its call graph
+      is printed (the same tree ``verdi process status`` shows). Exits
+      0 when every process has reached a terminal state, 2 while any is
+      still running, non-zero on load failures.
     """
     import json
     from pathlib import Path
 
+    input_path = Path(args.input_json)
+    if not input_path.is_file():
+        print(f"[check] input not found: {input_path}", file=sys.stderr)
+        return 1
+
+    raw = None
+    try:
+        raw = json.loads(input_path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"[check] invalid JSON in {input_path}: {exc}", file=sys.stderr)
+        return 1
+
+    if _looks_like_output_json(raw):
+        return _check_output_status(raw, profile=args.profile)
+
+    return _check_input_json(args, input_path)
+
+
+def _looks_like_output_json(raw) -> bool:
+    """``True`` when ``raw`` is an ``output.json`` identifier map.
+
+    Such files carry ``"workflow"`` plus nested ``preset -> identifier``
+    leaves (WorkChain UUID strings or legacy integer pks) and never the
+    input-only keys ``parameters`` / ``static`` / ``code``.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("workflow"), str):
+        return False
+    if any(key in raw for key in ("parameters", "static", "code")):
+        return False
+    return _any_identifier_leaf(raw)
+
+
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _any_identifier_leaf(obj) -> bool:
+    """``True`` when ``obj`` contains at least one process identifier leaf."""
+    if isinstance(obj, dict):
+        return any(_any_identifier_leaf(value) for value in obj.values())
+    if isinstance(obj, (list, tuple)):
+        return any(_any_identifier_leaf(value) for value in obj)
+    if isinstance(obj, int):
+        return True
+    return isinstance(obj, str) and bool(_UUID_RE.match(obj))
+
+
+def _collect_process_identifiers(obj, path=()):
+    """Recursively yield ``(path_tuple, identifier)`` for identifier leaves."""
+    found = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            found.extend(_collect_process_identifiers(value, path + (str(key),)))
+    elif isinstance(obj, (list, tuple)):
+        for index, value in enumerate(obj):
+            found.extend(_collect_process_identifiers(value, path + (f"[{index}]",)))
+    elif isinstance(obj, int) or (
+        isinstance(obj, str) and bool(_UUID_RE.match(obj))
+    ):
+        found.append((path, obj))
+    return found
+
+
+def _check_output_status(raw, profile) -> int:
+    """Resolve every identifier in an ``output.json`` and print its status."""
+    load_profile(profile)
+
+    from aiida.cmdline.utils.ascii_vis import format_call_graph
+    from aiida.orm import load_node
+
+    identifiers = _collect_process_identifiers(raw)
+    if not identifiers:
+        print("[check] no process identifiers found in output.json", file=sys.stderr)
+        return 1
+
+    counts: dict[str, int] = {}
+    failures = 0
+    for path, identifier in identifiers:
+        label = "/".join(p for p in path if p != "workflow") or str(identifier)
+        short = _short_id(identifier)
+        try:
+            node = load_node(identifier)
+        except Exception as exc:  # noqa: BLE001 — surface any load failure
+            print(
+                f"[check] {label} [{short}]: failed to load "
+                f"identifier {identifier!r}: {exc}",
+                file=sys.stderr,
+            )
+            counts["load_failed"] = counts.get("load_failed", 0) + 1
+            failures += 1
+            continue
+
+        state = node.process_state.value if node.process_state else "?"
+        counts[state] = counts.get(state, 0) + 1
+        print(f"\n=== {label} [{short}] ===")
+        print(format_call_graph(node))
+
+    print(
+        "\n[check] "
+        + ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+    )
+    if failures:
+        return 1
+    active = counts.get("created", 0) + counts.get("waiting", 0) + counts.get("running", 0)
+    return 2 if active else 0
+
+
+def _check_input_json(args, input_path) -> int:
+    """Dry-run an input.json: parse + validate, print the execution plan."""
+    import json
+
     from aiida_uranium_workflow.utils.config import ConfigLoader
 
-    input_path = Path(args.input_json)
     try:
         bundle = ConfigLoader(input_path).load_all()
     except Exception as exc:  # noqa: BLE001 — surface any validation failure
@@ -415,8 +539,16 @@ def _check(args) -> int:
     print(f"workflow: {workflow} | profile: {profile}")
     static = ip.get("static", {})
     structures = static.get("structure", "?")
+    metadata = static.get("metadata", "?")
+    if isinstance(structures, (list, tuple)):
+        # A pk / uuid list can be long (one entry per imported structure):
+        # show a head plus the count instead of one huge line.
+        head = ", ".join(str(s) for s in structures[:6])
+        more = f" … (+{len(structures) - 6})" if len(structures) > 6 else ""
+        print(f"structures ({len(structures)}): {head}{more} | metadata: {metadata}")
+    else:
+        print(f"structure: {structures} | metadata: {metadata}")
     n_structures = len(structures) if isinstance(structures, (list, tuple)) else 1
-    print(f"structure: {structures} | metadata: {static.get('metadata', '?')}")
 
     codes = ip.get("code", {})
     if codes:
@@ -543,12 +675,33 @@ def _plot(args) -> int:
     """Render figures from spec JSONs; dispatch on each spec's mode."""
     from pathlib import Path
 
+    from aiida import load_profile
+
     from aiida_uranium_workflow.cli.plot._loading import load_spec
     from aiida_uranium_workflow.cli.plot._rendering import (
         render_band_compare,
         render_spec,
     )
     from aiida_uranium_workflow.utils.plot.phonon import render_phonon_spec
+
+    # Every renderer reads nodes from the DB — load the profile first.
+    # (The phonon spec path has no internal `_ensure_profile_loaded`, so
+    # without this the run fails with "Could not determine the current
+    # profile".)
+    try:
+        load_profile(getattr(args, "profile", None))
+    except Exception as exc:  # noqa: BLE001 — report and give the fix
+        print(
+            f"[plot] could not load profile "
+            f"{getattr(args, 'profile', None)!r}: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "[plot] pass --profile <name> (e.g. -p aiida_profile) or run "
+            "`verdi profile setdefault <name>` once.",
+            file=sys.stderr,
+        )
+        return 1
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

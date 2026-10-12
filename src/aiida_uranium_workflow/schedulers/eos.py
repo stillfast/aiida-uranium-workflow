@@ -21,6 +21,7 @@ from __future__ import annotations
 from aiida_uranium_workflow.input_builders.eos import (
     AbacusEosAdapter,
     FleurEosAdapter,
+    QeEosAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (
     register_workflow,
@@ -36,6 +37,7 @@ def parse_eos_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "abacus": dict(protocol.get("abacus", {})),
         "fleur": dict(protocol.get("fleur", {})),
+        "qe": dict(protocol.get("qe", {})),
     }
 
 
@@ -45,15 +47,17 @@ class EosWorkflowOrchestrator(WorkflowOrchestrator):
     ADAPTERS = {
         "abacus": AbacusEosAdapter,
         "fleur": FleurEosAdapter,
+        "qe": QeEosAdapter,
     }
 
-    BACKENDS = ("abacus", "fleur")
+    BACKENDS = ("abacus", "fleur", "qe")
 
     #: Per-backend preset-subkey mapping — both backends share the
     #: unified ``parameters/<backend>/scf.yml``.
     PRESET_SUBKEYS: dict[str, str] = {
         "abacus": "scf",
         "fleur": "scf",
+        "qe": "scf",
     }
 
 

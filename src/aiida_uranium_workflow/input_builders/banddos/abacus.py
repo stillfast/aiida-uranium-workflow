@@ -10,7 +10,7 @@ workflow is **not** a parameter sweep — one WorkChain is submitted per
 """
 from __future__ import annotations
 
-from ..base import AdaptedInputs, SoftwareAdapter
+from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
 from typing import Any, List, Tuple
 
 
@@ -28,7 +28,9 @@ class AbacusBandAdapter(SoftwareAdapter):
         import copy
 
         params = copy.deepcopy(self.software_params["parameters"])
-        options = self.metadata.get("options", {})
+        options = filter_scheduler_options(
+            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+        )
 
         inputs: dict[str, Any] = {
             "structure": structure,

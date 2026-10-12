@@ -18,11 +18,19 @@ every split species.
 
 from __future__ import annotations
 
+from aiida.common.exceptions import MultipleObjectsError, NotExistent
 from aiida.orm import load_group
 from ..base import SoftwareAdapter
 from typing import Any, Dict
 
 import copy
+
+#: Reserved non-species keys allowed inside a magmom entry, used by the
+#: non-collinear / SOC sweep: ``angle1`` / ``angle2`` map each species to
+#: its initial-magnetisation polar / azimuthal angle in degrees (QE
+#: SYSTEM.angle1 / angle2). They are never treated as split-species keys
+#: and are forwarded verbatim to the pw parameters.
+RESERVED_KEYS = frozenset({"angle1", "angle2"})
 
 
 class QeMagmomAdapter(SoftwareAdapter):
@@ -76,18 +84,24 @@ class QeMagmomAdapter(SoftwareAdapter):
 
         ``{"U": 2.0}`` → ``{"U1": 2.0, "U2": 2.0}`` (all sites get the
         same initial moment); species-level entries are passed through
-        with missing species defaulting to 0.0.
+        with missing species defaulting to 0.0. Reserved keys
+        (``angle1`` / ``angle2`` — per-species angle dicts for SOC
+        seeds) are preserved verbatim on every expanded entry.
         """
         if not species:
             return entries
         element = species[0].rstrip("0123456789")
         expanded = []
         for entry in entries:
-            if set(entry) <= {element}:
+            if set(entry) - RESERVED_KEYS <= {element}:
                 value = entry.get(element, 0.0)
-                expanded.append({s: value for s in species})
+                out = {s: value for s in species}
             else:
-                expanded.append({s: entry.get(s, 0.0) for s in species})
+                out = {s: entry.get(s, 0.0) for s in species}
+            for key in RESERVED_KEYS:
+                if key in entry:
+                    out[key] = entry[key]
+            expanded.append(out)
         return expanded
 
     def _prepare_structure_and_entries(self, structure):
@@ -99,7 +113,8 @@ class QeMagmomAdapter(SoftwareAdapter):
 
         elements = {k.symbols[0] for k in structure.kinds}
         species_keys = sorted({
-            k for entry in entries for k in entry if k not in elements
+            k for entry in entries for k in entry
+            if k not in elements and k not in RESERVED_KEYS
         })
         if not species_keys:
             return structure, entries  # element-level (NM / FM)
@@ -187,14 +202,44 @@ class QeMagmomAdapter(SoftwareAdapter):
         return inputs
 
     def _load_family(self):
-        """Return the pseudo family group named in the preset."""
+        """Return the pseudo family group named in the preset.
+
+        ``load_group`` requires a unique label. Some tooling (e.g.
+        aiida-abacus' ``install-collection`` + ``create-family``) can
+        create a collection *and* a family group under the same label —
+        in that case the family-type group (the one exposing
+        ``get_pseudos`` / ``get_recommended_cutoffs``) is selected.
+        """
         family = str(self.software_params.get("pseudo_family", ""))
         if not family:
             raise ValueError(
                 "qe magmom preset is missing 'pseudo_family' "
                 "(e.g. SSSP/1.3/PBE/efficiency)."
             )
-        return load_group(family)
+        try:
+            return load_group(family)
+        except MultipleObjectsError:
+            pass
+        except NotExistent:
+            raise ValueError(
+                f"pseudo family group {family!r} does not exist"
+            ) from None
+
+        # Multiple groups share the label — prefer the family-type one.
+        from aiida.orm import Group, QueryBuilder
+
+        rows = (
+            QueryBuilder()
+            .append(Group, filters={"label": family}, project=["id", "type_string"])
+            .all()
+        )
+        family_rows = [row for row in rows if "family" in row[1]]
+        if len(family_rows) == 1:
+            return Group.collection.get(id=family_rows[0][0])
+        raise ValueError(
+            f"multiple groups named {family!r} and no unique family-type "
+            f"candidate ({rows}); rename or delete the duplicates"
+        )
 
     def _prepare_workflow_inputs(self) -> Dict[str, list]:
         """Extract the ``magmom_list`` from workflow_data."""

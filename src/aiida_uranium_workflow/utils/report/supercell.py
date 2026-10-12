@@ -1,7 +1,9 @@
 """Supercell SCF WorkChain report generation.
 
 Renders one table row per supercell (matrix / natoms / volume / total
-energy / wall time / scf steps) from the ``output_parameters`` Dict
+energy / average atomic energy / wall time (integer seconds) / scf
+steps) from the
+``output_parameters`` Dict
 produced by
 :class:`aiida_uranium_workflow.workflows.supercell.abacus.SupercellScfWorkChain`.
 
@@ -33,6 +35,25 @@ def _fmt(value: Any, prec: int = 6) -> str:
         return str(value)
 
 
+def _energy_per_atom(cell: Dict[str, Any]) -> Any:
+    """Average atomic energy (eV/atom) of a cell.
+
+    Uses the stored ``energy_per_atom`` when present (recent runs) and
+    otherwise derives it from ``energy``/``natoms`` so older WorkChains
+    still show the column.
+    """
+    epa = cell.get("energy_per_atom")
+    if epa is not None:
+        return epa
+    energy, natoms = cell.get("energy"), cell.get("natoms")
+    if energy is None or not natoms:
+        return None
+    try:
+        return float(energy) / float(natoms)
+    except (TypeError, ValueError):
+        return None
+
+
 def _child_scf_stats(scf_pk: Any) -> Dict[str, Any]:
     """Best-effort fetch of wall time / scf steps from an SCF child.
 
@@ -62,11 +83,21 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
 
     lines = [
         "| label | matrix | natoms | volume (Å³) | energy (eV) "
-        "| time (s) | scf steps |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| energy/atom (eV) | time (s) | scf steps |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for cell in cells:
         stats = {}
+        if cell.get("status") == "failed" and cell.get("energy") is None:
+            # deliberately failed cell (a parameter value outside PEXSI's
+            # pole table, a phase scan that cannot converge, ...) — keep the
+            # row, there is simply no data for it
+            lines.append(
+                f"| {cell.get('label', '—')} | {_fmt(cell.get('matrix'), 0)} "
+                f"| {cell.get('natoms', '—')} | {_fmt(cell.get('volume'))} "
+                f"| — | — | — | — |"
+            )
+            continue
         if cell.get("time_s") is None or cell.get("scf_steps") is None:
             # Older output dicts lack the SCF stats — re-derive from the
             # child node so already-run WorkChains still show them.
@@ -77,8 +108,9 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
             f"| {cell.get('natoms', '—')} "
             f"| {_fmt(cell.get('volume'))} "
             f"| {_fmt(cell.get('energy'))} "
-            f"| {_fmt(stats.get('time_s', cell.get('time_s')), 3)} "
-            f"| {stats.get('scf_steps', cell.get('scf_steps', '—'))} |"
+            f"| {_fmt(_energy_per_atom(cell))} "
+            f"| {_fmt(stats.get('time_s', cell.get('time_s')), 0)} "
+            f"| {stats.get('scf_steps') or cell.get('scf_steps') or '—'} |"
         )
     return "\n".join(lines)
 

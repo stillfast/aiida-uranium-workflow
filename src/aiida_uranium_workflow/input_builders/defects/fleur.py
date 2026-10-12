@@ -10,6 +10,8 @@ potentials) from the workflow protocol (``parameters/defects.yml``'s
 from __future__ import annotations
 
 from ..base import SoftwareAdapter
+
+from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
 from typing import Any
 
 
@@ -58,8 +60,31 @@ class FleurDefectsAdapter(SoftwareAdapter):
                 dict=dict(proto.get("wf_parameters") or {"mode": "scf"})
             ),
         }
-        if "supercell_matrix" in proto:
-            inputs["supercell_matrix"] = orm.List(list=list(proto["supercell_matrix"]))
+        # Supercell matrices: a single matrix (legacy key) or a list for a
+        # supercell-size scan (``supercell_matrices`` / a list under
+        # ``supercell_matrix``).
+        spec = proto.get("supercell_cells")
+        if spec is None:
+            spec = proto.get("supercell_matrices")
+        if spec is None:
+            spec = proto.get("supercell_matrix")
+        cells = normalize_supercell_cells(spec)
+        for cell in cells:
+            if cell.get("kpoints_mesh") or cell.get("kpoints_distance"):
+                raise ValueError(
+                    "per-cell k-point overrides (kpoints_mesh / "
+                    "kpoints_distance) are only supported by the ABACUS "
+                    "backend; set the k-mesh in the FLEUR preset instead."
+                )
+        if cells and all(set(cell) == {"matrix"} for cell in cells):
+            # plain matrices → legacy inputs (one matrix per cell)
+            matrices = [cell["matrix"] for cell in cells]
+            if len(matrices) == 1:
+                inputs["supercell_matrix"] = orm.List(list=matrices[0])
+            else:
+                inputs["supercell_matrices"] = orm.List(list=matrices)
+        elif cells:
+            inputs["supercell_cells"] = orm.List(list=cells)
         if "relax_settings" in proto:
             inputs["relax_settings"] = orm.Dict(dict=dict(proto["relax_settings"]))
         return inputs

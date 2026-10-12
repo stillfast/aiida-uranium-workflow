@@ -75,8 +75,24 @@ class QeMagmomWorkChain(WorkChain):
 
             params = deepcopy(pw_base["parameters"].get_dict())
             system = params.setdefault("SYSTEM", {})
-            system["starting_magnetization"] = dict(mag_value)
-            system["nspin"] = 2  # collinear sweep (SOC handled in preset)
+            # SOC (non-collinear) seeds are configured in the SCF preset
+            # (``noncolin`` / ``lspinorb`` / ``nspin=1``); only the
+            # collinear sweep forces nspin=2 here. The per-species
+            # magnetisation magnitude goes into starting_magnetization;
+            # reserved per-species angle keys (angle1/angle2, degrees)
+            # are forwarded for the SOC direction.
+            reserved = {"angle1", "angle2"}
+            magnitudes = {
+                k: v for k, v in dict(mag_value).items() if k not in reserved
+            }
+            system["starting_magnetization"] = magnitudes
+            is_soc = bool(system.get("lspinorb")) or bool(system.get("noncolin"))
+            if is_soc:
+                for key in reserved:
+                    if key in mag_value:
+                        system[key] = dict(mag_value[key])
+            else:
+                system["nspin"] = 2  # collinear sweep
 
             child_inputs = {
                 **base_inputs,

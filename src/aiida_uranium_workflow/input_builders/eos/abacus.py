@@ -8,7 +8,7 @@ block), then assembles inputs for
 
 from __future__ import annotations
 
-from ..base import SoftwareAdapter
+from ..base import filter_scheduler_options, SoftwareAdapter
 from typing import Any
 
 import copy
@@ -52,6 +52,14 @@ class AbacusEosAdapter(SoftwareAdapter):
                 params["input"][key] = eos_proto[key]
 
         options = self.metadata.get("options", {})
+        # Non-scheduler keys from the shared metadata presets (e.g.
+        # ``optimize_resources`` in the ``yunhe`` preset) must not be
+        # forwarded — the ``metadata.options`` namespace is not dynamic.
+        options = filter_scheduler_options(
+            options,
+            entry_point=self._workchain_entry_point(),
+            backend=self.name,
+        )
         base: dict[str, Any] = {
             "abacus": {
                 "code": orm.load_code(self.code_label),

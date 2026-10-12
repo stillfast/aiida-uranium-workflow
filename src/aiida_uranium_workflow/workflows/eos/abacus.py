@@ -3,9 +3,10 @@
 Determines the ground-state (equilibrium) volume / lattice constant of a
 structure by the standard EOS scan:
 
-1. ``generate_structures`` — scale the input cell uniformly by the
-   factors ``guess ± k·step`` (same convention as the aiida-fleur
-   ``FleurEosWorkChain``).
+1. ``generate_structures`` — scale the input cell uniformly so the scan
+   volumes are spaced by a **relative volume step** (``step`` = ΔV/V,
+   e.g. 0.01 → 1% volume steps; the lattice scale factors are
+   ``(1 + ΔV/V)^(1/3)`` around the central ``guess``).
 2. ``submit_scfs`` — one fixed-lattice ``AbacusBaseWorkChain`` (SCF +
    total energy) per scaled cell.
 3. ``inspect_scfs`` — report failed scaled-cell SCFs; the run is not
@@ -117,7 +118,15 @@ class AbacusEosWorkChain(WorkChain):
     # ------------------------------------------------------------------
 
     def generate_structures(self):
-        """Build the scaled cells from ``eos_parameters``."""
+        """Build the scaled cells from ``eos_parameters``.
+
+        ``step`` is a **relative volume step** (each consecutive scan
+        point differs by ΔV/V = ``step``, e.g. 1% for ``step: 0.01``),
+        not a lattice-constant step: the scan volume factors are
+        geometric, ``(1 + step)^(i − mid)``, and the cell vectors are
+        scaled by ``guess · (volume factor)^(1/3)``. ``guess`` stays the
+        central lattice-constant scale (≈ 1).
+        """
         eos = (
             dict(self.inputs.eos_parameters.get_dict())
             if "eos_parameters" in self.inputs
@@ -126,16 +135,21 @@ class AbacusEosWorkChain(WorkChain):
         points = int(eos.get("points", _DEFAULT_EOS["points"]))
         step = float(eos.get("step", _DEFAULT_EOS["step"]))
         guess = float(eos.get("guess", _DEFAULT_EOS["guess"]))
-        start = guess - (points - 1) / 2 * step
-        scales = [start + i * step for i in range(points)]
+        midpoint = (points - 1) / 2
+        # Geometric volume scan: every consecutive point differs by the
+        # *relative* volume step ``step`` (1% for step=0.01).
+        volume_factors = [(1.0 + step) ** (i - midpoint) for i in range(points)]
+        scales = [guess * (factor ** (1.0 / 3.0)) for factor in volume_factors]
 
         self.ctx.scales = scales
         self.ctx.scaled_structures = [
             scale_structure(self.inputs.structure, s) for s in scales
         ]
         self.report(
-            f"generated {len(scales)} scaled cells, scale factors "
-            f"{[round(s, 4) for s in scales]}"
+            f"generated {len(scales)} scaled cells (volume step {step:.4f}), "
+            f"lattice scale factors "
+            f"{[round(s, 5) for s in scales]}, volume factors "
+            f"{[round(v, 4) for v in volume_factors]}"
         )
 
     def submit_scfs(self):

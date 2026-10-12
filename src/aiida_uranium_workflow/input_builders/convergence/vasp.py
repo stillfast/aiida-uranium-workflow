@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..base import SoftwareAdapter
+from ..base import filter_scheduler_options, SoftwareAdapter
 from typing import Any, List, Tuple
 
 
@@ -30,7 +30,11 @@ class VaspConvergenceAdapter(SoftwareAdapter):
             "parameters": {"incar": incar},
             "potential_family": orm.Str(entry["potential_family"]),
             "potential_mapping": orm.Dict(dict=entry["potential_mapping"]),
-            "calc": {"metadata": {"options": options} if options else {}},
+            "calc": {"metadata": {"options": filter_scheduler_options(
+            options,
+            entry_point=self._workchain_entry_point(),
+            backend=self.name,
+        )} if options else {}},
         }
         if include_spacing and "kpoints_spacing" in entry:
             inputs["kpoints_spacing"] = orm.Float(entry["kpoints_spacing"])

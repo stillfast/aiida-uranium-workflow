@@ -8,7 +8,7 @@ lists from the workflow protocol (``parameters/elastic.yml``'s
 
 from __future__ import annotations
 
-from ..base import AdaptedInputs, SoftwareAdapter
+from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
 from typing import Any, Dict
 
 
@@ -26,7 +26,9 @@ class AbacusElasticAdapter(SoftwareAdapter):
         import copy
 
         params = copy.deepcopy(self.software_params["parameters"])
-        options = self.metadata.get("options", {})
+        options = filter_scheduler_options(
+            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+        )
 
         # Fixed-lattice SCF: no cell relaxation, stress output on.
         params["input"]["calculation"] = "scf"

@@ -20,6 +20,7 @@ from __future__ import annotations
 from aiida_uranium_workflow.input_builders.relax import (
     AbacusRelaxAdapter,
     FleurRelaxAdapter,
+    QeRelaxAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (
     register_workflow,
@@ -53,6 +54,7 @@ def parse_relax_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "abacus": dict(protocol.get("abacus", {})),
         "fleur": dict(protocol.get("fleur", {})),
+        "qe": dict(protocol.get("qe", {})),
     }
 
 
@@ -62,16 +64,20 @@ class RelaxWorkflowOrchestrator(WorkflowOrchestrator):
     ADAPTERS = {
         "abacus": AbacusRelaxAdapter,
         "fleur": FleurRelaxAdapter,
+        "qe": QeRelaxAdapter,
     }
 
-    BACKENDS = ("abacus", "fleur")
+    BACKENDS = ("abacus", "fleur", "qe")
 
     #: Per-backend preset-subkey mapping. ``"abacus": {"scf": [...]}``
     #: picks the ``parameters/abacus/scf.yml`` preset; ``"fleur":
-    #: {"scf": "..."}`` picks ``parameters/fleur/scf.yml``.
+    #: {"scf": "..."}`` picks ``parameters/fleur/scf.yml``; ``"qe":
+    #: {"relax": [...]}`` picks the self-contained
+    #: ``parameters/qe/relax.yml`` presets.
     PRESET_SUBKEYS: dict[str, str] = {
         "abacus": "scf",
         "fleur": "scf",
+        "qe": "scf",
     }
 
 

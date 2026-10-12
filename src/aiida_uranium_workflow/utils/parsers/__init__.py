@@ -120,22 +120,36 @@ def fetch_abacus(node) -> Tuple[Optional[float], Optional[float]]:
       log's last line via :func:`parse_abacus_last_energy`).
     * Time:  ``Total  Time`` line of ``OUT.aiida/running_scf.log`` (or
       ``running_cell-relax.log`` if the SCF log is missing).
+
+    A *failed* node is tolerated: it may have no ``misc`` / ``retrieved``
+    output at all (e.g. an ``AbacusBaseWorkChain`` that exited 401 after a
+    non-converged SCF), in which case both values come back as ``None``.
+    Callers that tabulate a partly failed parameter scan rely on this.
     """
-    misc = node.outputs.misc.get_dict()
+    energy: Optional[float] = None
+    wall_time: Optional[float] = None
+    try:
+        misc = node.outputs.misc.get_dict()
+    except (AttributeError, KeyError):
+        misc = {}
     energy = misc.get("total_energy")
-    if energy is None:
-        log_text = _read_abacus_log(node.outputs.retrieved, "running_scf.log")
+    try:
+        retrieved = node.outputs.retrieved
+    except (AttributeError, KeyError):
+        retrieved = None
+    if energy is None and retrieved is not None:
+        log_text = _read_abacus_log(retrieved, "running_scf.log")
         if log_text is not None:
             energy = parse_abacus_last_energy(log_text)
 
-    wall_time: Optional[float] = None
-    for log_name in ("running_scf.log", "running_cell-relax.log"):
-        log_text = _read_abacus_log(node.outputs.retrieved, log_name)
-        if log_text is None:
-            continue
-        wall_time = parse_total_time(log_text)
-        if wall_time is not None:
-            break
+    if retrieved is not None:
+        for log_name in ("running_scf.log", "running_cell-relax.log"):
+            log_text = _read_abacus_log(retrieved, log_name)
+            if log_text is None:
+                continue
+            wall_time = parse_total_time(log_text)
+            if wall_time is not None:
+                break
 
     return energy, wall_time
 
@@ -176,18 +190,34 @@ def fetch_energy_time(node, backend: str) -> Tuple[Optional[float], Optional[flo
 # ---------------------------------------------------------------------------
 
 
-def _count_abacus_elec_steps(retrieved) -> Optional[int]:
-    """Count electronic SCF steps from ``OUT.aiida/running_scf.log``.
+#: ABACUS electronic-step markers seen in ``OUT.aiida/running_scf.log``.
+#: Older builds (and the ABACUS-LTS binary) print ``ION=   1  ELEC=   n``;
+#: the 3.9.x line (e.g. the PEXSI build) prints
+#: ``--> #ION MOVE#         1  #ELEC ITER#         1``. Both are counted,
+#: so a run's step count does not depend on which binary produced it.
+_ABACUS_ELEC_STEP_PATTERNS = (
+    re.compile(r"ION=\s*\d+\s+ELEC=\s*\d+"),
+    re.compile(r"#ION\s+MOVE#\s*\d+\s+#ELEC\s+ITER#\s*\d+"),
+)
 
-    ABACUS prints one ``ION=   1  ELEC=   n`` line per electronic step in
-    the fixed-lattice SCF log; the count of such lines is the number of
-    electronic iterations. Returns ``None`` when the log can't be read.
+
+def count_abacus_elec_steps(log_text: Optional[str]) -> Optional[int]:
+    """Electronic SCF step count of an ABACUS ``running_scf.log`` text.
+
+    One line is printed per electronic step, in either of the two
+    formats ABACUS builds use (see ``_ABACUS_ELEC_STEP_PATTERNS``); the
+    larger count wins so an accidental mix of formats can't undercount.
+    Returns ``None`` for missing text or an unrecognised log.
     """
-    log_text = _read_abacus_log(retrieved, "running_scf.log")
-    if log_text is None:
+    if not log_text:
         return None
-    steps = len(re.findall(r"ION=\s*\d+\s+ELEC=\s*\d+", log_text))
+    steps = max(len(pattern.findall(log_text)) for pattern in _ABACUS_ELEC_STEP_PATTERNS)
     return steps if steps else None
+
+
+def _count_abacus_elec_steps(retrieved) -> Optional[int]:
+    """Count electronic SCF steps from ``OUT.aiida/running_scf.log``."""
+    return count_abacus_elec_steps(_read_abacus_log(retrieved, "running_scf.log"))
 
 
 def fetch_summary(node, backend: str) -> dict:
@@ -209,13 +239,27 @@ def fetch_summary(node, backend: str) -> dict:
     electronic iterations from the log (ABACUS) or is ``None`` when the
     backend parser does not expose them (VASP).
     """
+    # ``retrieved`` may be absent on a failed node, like ``misc``
+    try:
+        retrieved = node.outputs.retrieved
+    except (AttributeError, KeyError):
+        retrieved = None
+
     if backend == "abacus":
         energy, time_s = fetch_abacus(node)
-        try:
-            natoms = len(node.inputs.abacus.structure.sites)
-        except Exception:  # noqa: BLE001 — inputs missing
-            natoms = None
-        scf_steps = _count_abacus_elec_steps(node.outputs.retrieved)
+        natoms = None
+        for path in ("abacus.structure", "structure"):
+            # ``node.inputs.abacus.structure`` on an AbacusBaseWorkChain,
+            # but a bare AbacusCalculation takes ``structure`` directly.
+            target = node.inputs
+            try:
+                for key in path.split("."):
+                    target = getattr(target, key)
+                natoms = len(target.sites)
+                break
+            except Exception:  # noqa: BLE001 — input path absent
+                continue
+        scf_steps = _count_abacus_elec_steps(retrieved) if retrieved is not None else None
     elif backend == "vasp":
         energy, time_s = fetch_vasp(node)
         try:

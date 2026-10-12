@@ -45,6 +45,9 @@ from aiida_uranium_workflow.utils.report.eos import (
 from aiida_uranium_workflow.utils.report.defects import (
     generate_report as generate_defects_report,
 )
+from aiida_uranium_workflow.utils.report.elastic_cubic import (
+    generate_report as generate_elastic_cubic_report,
+)
 from aiida_uranium_workflow.utils.report.supercell import (
     generate_report as generate_supercell_report,
 )
@@ -104,19 +107,26 @@ BANDDOS_CLASS_TO_BACKEND: dict[str, str] = {
 RELAX_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusRelaxWorkChain": "abacus",
     "FleurRelaxWorkChain": "fleur",
+    "PwRelaxWorkChain": "qe",
 }
 ELASTIC_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusElasticWorkChain": "abacus",
     "VaspElasticWorkChain": "vasp",
     "FleurElasticWorkChain": "fleur",
+    "QeElasticWorkChain": "qe",
+}
+ELASTIC_CUBIC_CLASS_TO_BACKEND: dict[str, str] = {
+    "AbacusCubicElasticWorkChain": "abacus",
 }
 PHONOPY_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusPhonopyWorkChain": "abacus",
     "FleurPhonopyWorkChain": "fleur",
+    "QePhonopyWorkChain": "qe",
 }
 EOS_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusEosWorkChain": "abacus",
     "FleurEosWorkChain": "fleur",
+    "QeEosWorkChain": "qe",
 }
 DEFECTS_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusDefectsWorkChain": "abacus",
@@ -155,7 +165,7 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         class_to_backend=MAGMOM_CLASS_TO_BACKEND,
         generate_report=generate_magmom_report,
         backend_to_key={"abacus": "magmom", "vasp": "magmom",
-                        "fleur": "magmom", "qe": "magmom"},
+                        "fleur": "magmom", "qe": "scf"},
     ),
     "banddos": MethodSpec(
         name="banddos",
@@ -167,25 +177,36 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         name="relax",
         class_to_backend=RELAX_CLASS_TO_BACKEND,
         generate_report=generate_relax_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf"},
+        backend_to_key={"abacus": "scf", "fleur": "scf", "qe": "scf"},
     ),
     "elastic": MethodSpec(
         name="elastic",
         class_to_backend=ELASTIC_CLASS_TO_BACKEND,
         generate_report=generate_elastic_report,
-        backend_to_key={"abacus": "scf", "vasp": "elastic", "fleur": "scf"},
+        backend_to_key={
+            "abacus": "scf",
+            "vasp": "elastic",
+            "fleur": "scf",
+            "qe": "scf",
+        },
+    ),
+    "elastic_cubic": MethodSpec(
+        name="elastic_cubic",
+        class_to_backend=ELASTIC_CUBIC_CLASS_TO_BACKEND,
+        generate_report=generate_elastic_cubic_report,
+        backend_to_key={"abacus": "scf"},
     ),
     "phonopy": MethodSpec(
         name="phonopy",
         class_to_backend=PHONOPY_CLASS_TO_BACKEND,
         generate_report=generate_phonopy_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf"},
+        backend_to_key={"abacus": "scf", "fleur": "scf", "qe": "scf"},
     ),
     "eos": MethodSpec(
         name="eos",
         class_to_backend=EOS_CLASS_TO_BACKEND,
         generate_report=generate_eos_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf"},
+        backend_to_key={"abacus": "scf", "fleur": "scf", "qe": "scf"},
     ),
     "defects": MethodSpec(
         name="defects",
@@ -465,9 +486,15 @@ def generate_one_report(
 
     # Finished but unsuccessful (non-zero exit status, e.g. a failed EOS
     # SCF child): ignore the data point instead of emitting a misleading
-    # report. The caller still generates the remaining reports.
+    # report. Exception: workflows that deliberately store *partial*
+    # results (the defect scan exits 310 PARTIAL and keeps the formation
+    # energies of the cells that did finish) are still reported — the
+    # report itself calls out the exit status and the missing cells.
     if not workchain.is_finished_ok:
-        return f"skipped: id={short} not successful (exit_status={workchain.exit_status})"
+        try:
+            workchain.outputs.output_parameters
+        except (AttributeError, KeyError):
+            return f"skipped: id={short} not successful (exit_status={workchain.exit_status})"
 
     # Optional per-report extras: report generators that can also render
     # figures (e.g. phonopy's band + DOS image) accept ``figure_dir`` so
@@ -771,17 +798,23 @@ def build_unified_parser(
     check_p = sub.add_parser(
         "check",
         prog=f"{prog} check",
-        help="Dry-run validate an input.json and preview what would run.",
+        help="Validate an input.json (dry-run) or show an output.json's status.",
         description=(
-            "Parse and validate the input.json against the workflow "
-            "protocol / static tables (no AiiDA process is submitted). "
-            "Prints the resolved backend / preset names, the SCF preset "
-            "parameters, parsed protocol (workflow_data), scheduler "
-            "options and codes that would reach each WorkChain; exits "
-            "non-zero when the configuration is invalid. With --out DIR, "
-            "additionally dry-runs each input builder against the live "
-            "AiiDA profile and writes one YAML per planned WorkChain "
-            "with the exact inputs it would receive."
+            "With an **input.json** (has parameters/static/code): parse and "
+            "validate it against the workflow protocol / static tables (no "
+            "AiiDA process is submitted). Prints the resolved backend / "
+            "preset names, the SCF preset parameters, parsed protocol "
+            "(workflow_data), scheduler options and codes that would reach "
+            "each WorkChain; exits non-zero when the configuration is "
+            "invalid. With --out DIR, additionally dry-runs each input "
+            "builder against the live AiiDA profile and writes one YAML per "
+            "planned WorkChain with the exact inputs it would receive.\n\n"
+            "With an **output.json** (the identifier map written by ``run``: "
+            "``{workflow, backend: {key: {preset: uuid}}}``), every "
+            "WorkChain identifier is resolved against the live profile and "
+            "its call graph is printed — the same tree ``verdi process "
+            "status`` shows. Exits 0 when all processes reached a terminal "
+            "state, 2 while any is still created/waiting/running."
         ),
     )
     check_p.add_argument(

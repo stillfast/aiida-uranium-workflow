@@ -45,12 +45,54 @@ def _fmt(value: Any, prec: int = 6) -> str:
 
 def _derive_from_node(node, workflow_type: str) -> Dict[str, Any]:
     """Derive lattice constants / volume / energy from a plugin relax node."""
+    mode = None
     if workflow_type == "abacus":
         structure = node.outputs.structure
         try:
             energy = node.outputs.misc.get_dict().get("total_energy")
         except (AttributeError, KeyError):
             energy = None
+    elif workflow_type == "qe":
+        # PwRelaxWorkChain: output_structure (relaxed) + the last SCF's
+        # output_parameters (``energy`` in eV — aiida-qe already
+        # converted from Hartree).
+        structure = None
+        energy = None
+        mode = None
+        try:
+            structure = node.outputs.output_structure
+        except (AttributeError, KeyError):
+            pass
+        try:
+            para = node.outputs.output_parameters.get_dict()
+            energy = para.get("energy")
+        except (AttributeError, KeyError):
+            pass
+        # The report mode reflects the *actual* pw calculation type of
+        # the relax children (vc-relax changes the cell; a plain relax
+        # keeps it fixed) instead of a hard-coded label.
+        try:
+            calc = (
+                node.inputs.base_relax.pw.parameters.get_dict()
+                .get("CONTROL", {})
+                .get("calculation", "relax")
+            )
+            mode = {
+                "vc-relax": "cell+positions relax (vc-relax)",
+                "relax": "positions relax (cell fixed)",
+                "vc-md": "cell+positions dynamics (vc-md)",
+                "md": "positions dynamics (md)",
+            }.get(calc, f"{calc} relax")
+        except (AttributeError, KeyError):
+            pass
+        if structure is None:
+            return {
+                "lattice_constants": None,
+                "volume": None,
+                "energy": energy,
+                "mode": mode,
+                "energy_units": "eV",
+            }
     else:  # fleur
         structure = node.outputs.optimized_structure
         energy = None
@@ -71,13 +113,16 @@ def _derive_from_node(node, workflow_type: str) -> Dict[str, Any]:
 
     cell = np.asarray(structure.cell)
     lengths = [float(x) for x in np.linalg.norm(cell, axis=1)]
-    return {
+    result = {
         "lattice_constants": lengths,
         "lattice_constant": lengths[0],
         "volume": float(structure.get_cell_volume()),
         "energy": energy,
         "energy_units": "eV",
     }
+    if mode is not None:
+        result["mode"] = mode
+    return result
 
 
 def generate_summary_table(output_params: Dict[str, Any], workflow_type: str) -> str:
@@ -85,10 +130,15 @@ def generate_summary_table(output_params: Dict[str, Any], workflow_type: str) ->
     lines = ["| Property | Value |", "| --- | --- |"]
     lines.append(f"| backend | {workflow_type} |")
 
-    if workflow_type == "fleur":
-        lines.append("| mode | full relax (positions + cell) |")
-    else:
-        lines.append("| mode | volume-only relax |")
+    mode = output_params.get("mode")
+    if mode is None:
+        if workflow_type == "fleur":
+            mode = "full relax (positions + cell)"
+        elif workflow_type == "qe":
+            mode = "relax"
+        else:
+            mode = "volume-only relax"
+    lines.append(f"| mode | {mode} |")
     lines.append(
         f"| relaxed lattice constants | "
         f"{_fmt(output_params.get('lattice_constants'), 6)} Å |"

@@ -20,6 +20,7 @@ from __future__ import annotations
 from aiida_uranium_workflow.input_builders.elastic import (
     AbacusElasticAdapter,
     FleurElasticAdapter,
+    QeElasticAdapter,
     VaspElasticAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (
@@ -37,6 +38,7 @@ def parse_elastic_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
         "abacus": dict(protocol.get("abacus", {})),
         "vasp": dict(protocol.get("vasp", {})),
         "fleur": dict(protocol.get("fleur", {})),
+        "qe": dict(protocol.get("qe", {})),
     }
 
 
@@ -47,17 +49,19 @@ class ElasticWorkflowOrchestrator(WorkflowOrchestrator):
         "abacus": AbacusElasticAdapter,
         "vasp": VaspElasticAdapter,
         "fleur": FleurElasticAdapter,
+        "qe": QeElasticAdapter,
     }
 
-    BACKENDS = ("abacus", "vasp", "fleur")
+    BACKENDS = ("abacus", "vasp", "fleur", "qe")
 
     #: ``parameters/<backend>/<subkey>`` preset lookup for each backend:
-    #: abacus / fleur share the SCF base (``scf``), vasp presets are
-    #: self-contained (``elastic``).
+    #: abacus / fleur share the SCF base (``scf``), vasp / qe presets
+    #: are self-contained (``elastic``).
     PRESET_SUBKEYS: dict[str, str] = {
         "abacus": "scf",
         "vasp": "elastic",
         "fleur": "scf",
+        "qe": "scf",
     }
 
 

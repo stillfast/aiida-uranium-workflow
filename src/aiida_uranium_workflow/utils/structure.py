@@ -13,6 +13,93 @@ import sys
 STRUCTURE_YML = STATIC_DIR / "structure.yml"
 
 
+def classify_structure_ref(ref: Any) -> tuple[str, Any]:
+    """Classify one ``static.structure`` entry.
+
+    Returns ``(kind, value)`` with ``kind`` in ``{"pk", "uuid", "name"}``:
+
+    * ``{"pk": 12345}`` / ``{"uuid": "..."}`` — explicit dict form (the
+      same convention as ``extra_files`` in the SCF presets);
+    * ``12345`` / ``"12345"`` — an integer pk, i.e. an existing
+      ``StructureData`` node in the profile;
+    * ``"3f2a…-…"`` — a UUID (dashed or bare 32 hex characters);
+    * anything else — a name from ``static/structure.yml``.
+
+    The identifier forms let ``input.json`` point at structures that were
+    imported and stored once (e.g. from POSCAR / CIF files) instead of
+    re-generating them from the registry.
+    """
+    if isinstance(ref, dict):
+        has_pk = ref.get("pk") is not None
+        ident = ref.get("pk") if has_pk else ref.get("uuid")
+        if ident is None:
+            raise ValueError(
+                f"structure reference dict must contain 'pk' or 'uuid', got {ref!r}"
+            )
+        if has_pk:
+            return "pk", int(ident) if str(ident).isdigit() else ident
+        from uuid import UUID
+
+        return "uuid", str(UUID(str(ident)))
+
+    if isinstance(ref, bool):  # bool is an int subclass — never a pk here
+        raise TypeError(f"invalid structure reference {ref!r}")
+    if isinstance(ref, int):
+        return "pk", ref
+    if not isinstance(ref, str):
+        raise TypeError(
+            "structure references must be a registry name, a pk, a uuid or "
+            f"a {{'pk'|'uuid': ...}} dict, got {type(ref).__name__}"
+        )
+
+    text = ref.strip()
+    if text.isdigit():
+        return "pk", int(text)
+    try:  # dashed or bare-hex UUID; registry names never parse as one
+        from uuid import UUID
+
+        return "uuid", str(UUID(text))
+    except (ValueError, AttributeError, TypeError):
+        return "name", ref
+
+
+def load_structure_node(ref: Any):
+    """Return the stored ``StructureData`` referenced by ``ref``.
+
+    Returns ``None`` when ``ref`` is a registry name (nothing to load
+    yet). Raises when a pk / uuid does not resolve to a ``StructureData``.
+    """
+    kind, value = classify_structure_ref(ref)
+    if kind == "name":
+        return None
+
+    from aiida import orm
+
+    try:
+        node = orm.load_node(value)
+    except Exception as exc:  # noqa: BLE001 — NotExistent / ValueError
+        raise ValueError(
+            f"structure {kind} {value!r} could not be loaded from the profile: {exc}"
+        ) from exc
+    if not isinstance(node, orm.StructureData):
+        raise TypeError(
+            f"structure {kind} {value!r} is a {type(node).__name__}, not a "
+            "StructureData — store it with "
+            "`StructureData(ase=ase.io.read(<file>)).store()`."
+        )
+    return node
+
+
+def structure_ref_label(ref: Any) -> str:
+    """Short human-readable label for a structure reference (for logs)."""
+    kind, value = classify_structure_ref(ref)
+    if kind == "pk":
+        return f"pk{value}"
+    if kind == "uuid":
+        return f"uuid:{str(value)[:8]}"
+    return str(value)
+
+
 def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
     """Build an ASE Atoms object from a static entry via pyxtal.
 

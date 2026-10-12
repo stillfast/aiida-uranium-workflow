@@ -23,7 +23,11 @@ from __future__ import annotations
 
 from aiida import load_profile
 from aiida_uranium_workflow.utils.common import ParamBundle
-from aiida_uranium_workflow.utils.structure import build_structure
+from aiida_uranium_workflow.utils.structure import (
+    build_structure,
+    load_structure_node,
+    structure_ref_label,
+)
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
@@ -259,45 +263,60 @@ class WorkflowOrchestrator:
 
     # ---- internals (shared by all workflows) ----------------------------
 
-    def _structure_names(self) -> List[str]:
-        """Return one human-readable name per requested structure.
+    def _structure_refs(self) -> List[Any]:
+        """Return the raw ``static.structure`` entries as a list.
 
-        Mirrors :meth:`_build_structure`'s str-or-list parsing. Used as
-        the value of :attr:`SubmittedJob.structure_name` so the CLI can
-        record per-preset structure information in the output JSON.
+        Accepts a single entry (registry name / pk / uuid / ``{"pk": …}``
+        dict) or a non-empty list of them. Entries are validated in
+        :meth:`ConfigLoader._validate_static`; the meaning of each entry
+        is decided by
+        :func:`aiida_uranium_workflow.utils.structure.classify_structure_ref`.
         """
         raw = self.bundle.input_params["static"]["structure"]
-        if isinstance(raw, str):
-            return [raw]
         if isinstance(raw, (list, tuple)):
             if not raw:
                 raise ValueError("'static.structure' list must be non-empty")
-            if not all(isinstance(s, str) for s in raw):
-                raise TypeError(
-                    "'static.structure' must be a string or a list of strings, "
-                    f"got {raw!r}"
-                )
             return list(raw)
-        raise TypeError(
-            "'static.structure' must be a string or a list of strings, "
-            f"got type {type(raw).__name__}"
-        )
+        return [raw]
+
+    def _structure_names(self) -> List[str]:
+        """Return one human-readable name per requested structure.
+
+        Mirrors :meth:`_build_structure`'s parsing. Used as the value of
+        :attr:`SubmittedJob.structure_name` so the CLI can record
+        per-structure information in the output JSON; identifier entries
+        render as ``pk12345`` / ``uuid:3f2a1b4c``.
+        """
+        return [structure_ref_label(ref) for ref in self._structure_refs()]
 
     def _build_structure(self) -> List[Any]:
         """Build every structure requested by ``input.json['static']['structure']``.
 
-        The user may pass either a single name (``"bcc-uranium"``) or a
-        list of names (``["bcc-uranium", "bcc-uranium-0K"]``). In both
-        cases a list of AiiDA ``StructureData`` objects is returned — one
-        per requested structure — so the orchestrator can submit one
-        WorkChain per (backend, preset, structure) combination.
+        The user may pass either a single entry or a list of entries. Each
+        entry is one of:
+
+        * a name in ``static/structure.yml`` (``"bcc-uranium"``) — built
+          on the fly with pyxtal;
+        * a pk (``12345`` / ``"12345"`` / ``{"pk": 12345}``) or uuid
+          (``{"uuid": "…"}``) of an already-stored ``StructureData`` —
+          loaded from the profile as-is (imported structures, e.g. from
+          POSCAR files, cannot be re-generated from the registry).
+
+        In both cases a list of AiiDA ``StructureData`` objects is
+        returned — one per requested structure — so the orchestrator can
+        submit one WorkChain per (backend, preset, structure) combination.
         """
         from aiida import orm
 
-        return [
-            orm.StructureData(ase=build_structure(name))
-            for name in self._structure_names()
-        ]
+        structures = []
+        for ref in self._structure_refs():
+            node = load_structure_node(ref)
+            structures.append(
+                node
+                if node is not None
+                else orm.StructureData(ase=build_structure(ref))
+            )
+        return structures
 
     @staticmethod
     def _label(
@@ -356,6 +375,17 @@ class WorkflowOrchestrator:
                 isinstance(s, str) for s in sub
             ):
                 return list(sub)
+        # Dict form with a different category than PRESET_SUBKEYS (e.g.
+        # the shared ``parameters/qe/scf.yml`` under a ``"scf"`` key):
+        # label with the preset names of whichever category was given.
+        if isinstance(params, dict):
+            for sub in params.values():
+                if isinstance(sub, str):
+                    return [sub]
+                if isinstance(sub, (list, tuple)) and all(
+                    isinstance(s, str) for s in sub
+                ):
+                    return list(sub)
         return [f"{backend}#{i}" for i in range(n_presets)]
 
     def _select_backends(

@@ -47,12 +47,109 @@ def _path_length(kpoints: np.ndarray) -> np.ndarray:
     return np.concatenate([[0.0], np.cumsum(np.linalg.norm(diff, axis=1))])
 
 
+def _path_breaks(kpoints: np.ndarray) -> List[int]:
+    """Indices where a band path jumps between disconnected segments.
+
+    seekpath-style explicit paths concatenate disjoint high-symmetry
+    arcs (e.g. bcc ``Γ-H-N-Γ-P-H | P-N``) with a *connector* that has no
+    interior q-points — one giant step far larger than the sampling step.
+    Drawing straight through it would show a chord across the BZ (the
+    "H→P 直线"). Returns the point index where each new chunk starts.
+    """
+    if len(kpoints) < 3:
+        return []
+    steps = np.linalg.norm(np.diff(kpoints, axis=0), axis=1)
+    median_step = float(np.median(steps))
+    if median_step <= 0.0:
+        return []
+    return [int(index) + 1 for index in np.where(steps > 3.0 * median_step)[0]]
+
+
+def _chunked_x(kpoints: np.ndarray, breaks: List[int]):
+    """Return ``(x, chunks)``: cumulative q-distance along each contiguous
+    arc, with the arcs concatenated head-to-tail (no gap, no connector
+    chord). ``chunks`` are the inclusive point ranges to draw as separate
+    polylines so no fake straight line crosses the BZ at a break."""
+    chunks: List[tuple] = []
+    start = 0
+    for break_at in sorted(breaks):
+        chunks.append((start, break_at - 1))
+        start = break_at
+    chunks.append((start, len(kpoints) - 1))
+
+    x = np.zeros(len(kpoints))
+    offset = 0.0
+    for chunk_start, chunk_end in chunks:
+        segment = _path_length(kpoints[chunk_start:chunk_end + 1])
+        x[chunk_start:chunk_end + 1] = segment + offset
+        offset = x[chunk_end]  # next arc starts right where this one ended
+    return x, chunks
+
+
+def _label_ticks(x: np.ndarray, label_pos, label_text):
+    """Return ``(tick_x, tick_text)`` for the high-symmetry labels.
+
+    Two consecutive labels with no interior q-points between them (the
+    "connector" of two disconnected arcs, e.g. H→P of the bcc path) share
+    the same x and are merged into one tick written ``H|P`` — the
+    standard band-structure notation for a path break.
+    """
+    if label_pos is None:
+        return None, None
+    positions = [min(int(i), len(x) - 1) for i in label_pos]
+    texts = [str(t) for t in label_text]
+
+    tick_x: List[float] = []
+    tick_text: List[str] = []
+    index = 0
+    while index < len(positions):
+        merged = [texts[index]]
+        while (
+            index + 1 < len(positions)
+            and positions[index + 1] - positions[index] <= 1
+        ):
+            index += 1
+            merged.append(texts[index])
+        tick_x.append(float(x[positions[index]]))
+        tick_text.append("|".join(merged))
+        index += 1
+    return tick_x, tick_text
+
+
 def _segment_boundaries(n_kpoints: int, n_labels: int) -> List[int]:
     """Indices of the segment boundaries for ``n_labels`` evenly split labels."""
     if n_labels <= 1:
         return [0]
     pts_per_seg = max((n_kpoints - 1) // (n_labels - 1), 1)
     return [min(i * pts_per_seg, n_kpoints - 1) for i in range(n_labels)]
+
+
+def _geometric_boundaries(kpoints: np.ndarray) -> List[int]:
+    """Locate the high-symmetry points of a band path geometrically.
+
+    At every high-symmetry point the q-path either turns or folds back on
+    itself (a reversal, dot ≈ -1 — common in the bcc path), and the
+    connector jump between two disconnected arcs is an extreme case. The
+    boundaries are the point indices where the step direction stops being
+    (nearly) collinear with the previous step. Zero-length steps
+    (duplicate consecutive q-points) are skipped.
+    """
+    nk = len(kpoints)
+    if nk < 3:
+        return [0, max(nk - 1, 0)]
+    steps = np.diff(kpoints, axis=0)
+    norms = np.linalg.norm(steps, axis=1)
+    valid = np.where(norms > 0.0)[0]
+    if len(valid) < 2:
+        return [0, nk - 1]
+    unit = steps[valid] / norms[valid][:, None]
+    dots = np.einsum("ij,ij->i", unit[:-1], unit[1:])
+    changed = np.where(dots < 0.9)[0]  # between condensed steps c and c+1
+    boundaries = {0, nk - 1}
+    for condensed in changed:
+        # the turn sits at the point where the *later* step starts
+        boundaries.add(int(valid[condensed + 1]))
+    return sorted(boundaries)
 
 
 def _resolve_labels(bands_node, band_labels: Optional[Sequence[str]]):
@@ -65,13 +162,20 @@ def _resolve_labels(bands_node, band_labels: Optional[Sequence[str]]):
 
     raw = bands_node.base.attributes.get("labels")
     if isinstance(raw, list) and len(raw) >= 2:
-        # aiida-phonopy stores either plain label strings (positions =
-        # evenly split segment boundaries) or [qpoint_index, label] pairs.
+        # aiida-phonopy stores either plain label strings (positions are
+        # inferred from the path geometry — the high-symmetry points are
+        # where the q-path changes direction) or [qpoint_index, label]
+        # pairs.
         if all(isinstance(item, str) for item in raw):
             labels = [lb for lb in raw if lb not in ("", "?")]
             if len(labels) >= 2:
-                n_kpts = len(np.asarray(bands_node.get_kpoints()))
-                return _segment_boundaries(n_kpts, len(labels)), labels
+                kpts = np.asarray(bands_node.get_kpoints())
+                positions = _geometric_boundaries(kpts)
+                if len(positions) != len(labels):
+                    # Geometric detection failed (e.g. straight-through
+                    # labels) — fall back to the evenly-split guess.
+                    positions = _segment_boundaries(len(kpts), len(labels))
+                return positions, labels
         positions: List[int] = []
         labels: List[str] = []
         for item in raw:
@@ -205,26 +309,41 @@ def _draw_phonon_series(ax_band, ax_dos, flat, spec) -> None:
         "tab:purple", "tab:brown", "tab:pink", "tab:gray",
         "tab:olive", "tab:cyan",
     ]
+    max_x = 0.0
     for series_index, (data, backend, label) in enumerate(flat):
         color = palette[series_index % len(palette)]
         freqs = np.asarray(data["freqs"])
         kpts = np.asarray(data["kpoints"])
-        x = np.arange(len(kpts))
+        # Physical x-axis: cumulative distance along the q-path (not the
+        # per-series point index, which would stretch runs with different
+        # path-point densities relative to each other). Disconnected
+        # high-symmetry arcs (the seekpath/phonopy "connector" jump, e.g.
+        # H→P of the bcc path) are split and drawn as separate polylines
+        # with a gap, so no fake straight line crosses the BZ.
+        breaks = _path_breaks(kpts)
+        x, chunks = _chunked_x(kpts, breaks)
+        max_x = max(max_x, float(x[-1]) if len(x) else 0.0)
 
         for band in freqs.T:
-            ax_band.plot(x, band, color=color, lw=1.0, alpha=0.9)
+            for start, end in chunks:
+                ax_band.plot(
+                    x[start:end + 1], band[start:end + 1],
+                    color=color, lw=1.0, alpha=0.9,
+                )
 
         # High-symmetry labels of the first series only (they are the
-        # same k-path for all nodes of the same structure).
+        # same k-path for all nodes of the same structure). Adjacent
+        # labels without interior points (the H→P connector) are merged
+        # into a single "H|P" tick.
         if (
             data.get("label_pos") is not None
             and not getattr(ax_band, "_ph_labeled", False)
         ):
-            xpos = [x[min(int(i), len(x) - 1)] for i in data["label_pos"]]
-            for xp in xpos[1:-1]:
+            tick_x, tick_text = _label_ticks(x, data["label_pos"], data["label_text"])
+            for xp in tick_x[1:-1]:
                 ax_band.axvline(x=xp, color="grey", lw=0.6, ls="--", alpha=0.6)
-            ax_band.set_xticks(xpos)
-            ax_band.set_xticklabels(data["label_text"], fontsize=9)
+            ax_band.set_xticks(tick_x)
+            ax_band.set_xticklabels(tick_text, fontsize=9)
             setattr(ax_band, "_ph_labeled", True)
 
         ax_band.plot([], [], color=color, lw=2.0, label=f"{backend}/{label}")
@@ -235,13 +354,16 @@ def _draw_phonon_series(ax_band, ax_dos, flat, spec) -> None:
             ax_dos.plot(dos_y, dos_x, color=color, lw=1.0)
             ax_dos.fill_betweenx(dos_x, dos_y, color=color, alpha=0.2)
 
-    ax_band.set_xlabel(spec.figure.xlabel or "k-point index")
+    ax_band.set_xlabel(spec.figure.xlabel or "q-path distance (2π/a)")
     ax_band.set_ylabel(spec.figure.ylabel or "Frequency (THz)")
     if spec.figure.xlim:
         ax_band.set_xlim(spec.figure.xlim[0], spec.figure.xlim[1])
     else:
-        nk_max = max((len(np.asarray(d["kpoints"])) for d, _, _ in flat), default=1)
-        ax_band.set_xlim(0, max(nk_max - 1, 1))
+        if max_x <= 0.0:  # degenerate k-points (tests) — fall back to index
+            max_x = max(
+                (len(np.asarray(d["kpoints"])) for d, _, _ in flat), default=1
+            ) - 1
+        ax_band.set_xlim(0, max_x)
     # ``ylim`` is the frequency window (THz) for phonon mode.
     if spec.figure.ylim:
         ax_band.set_ylim(spec.figure.ylim[0], spec.figure.ylim[1])
@@ -303,16 +425,21 @@ def render_phonon_figure(
     )
 
     # ---- band structure ------------------------------------------------
+    # Split disconnected high-symmetry arcs (seekpath/phonopy connector
+    # jumps) so no fake straight line crosses the BZ (e.g. H→P of bcc).
+    breaks = _path_breaks(kpts)
+    x, chunks = _chunked_x(kpts, breaks)
     for band in freqs.T:
-        ax1.plot(x, band, color="tab:blue", lw=1.2)
+        for start, end in chunks:
+            ax1.plot(x[start:end + 1], band[start:end + 1], color="tab:blue", lw=1.2)
     if label_pos is not None:
-        # ``label_pos`` are k-point *indices*; map them to path-length
-        # x-coordinates (the x-axis is the cumulative reciprocal distance).
-        xpos = [x[min(int(i), len(x) - 1)] for i in label_pos]
-        for xp in xpos[1:-1]:
+        # Merge connector labels (H|P) and map them onto the chunked
+        # q-distance x-axis.
+        tick_x, tick_text = _label_ticks(x, label_pos, label_text)
+        for xp in tick_x[1:-1]:
             ax1.axvline(x=xp, color="grey", lw=0.8, ls="--")
-        ax1.set_xticks(xpos)
-        ax1.set_xticklabels(label_text)
+        ax1.set_xticks(tick_x)
+        ax1.set_xticklabels(tick_text)
     ax1.set_xlim(x[0], x[-1])
     ax1.set_ylabel("Frequency (THz)")
     ax1.set_title(title or f"Phonon bands (pk={node.pk})")

@@ -1,9 +1,13 @@
 """ABACUS supercell SCF WorkChain.
 
-Runs one fixed-lattice SCF per supercell matrix from the protocol
+Runs one fixed-lattice calculation per supercell matrix from the protocol
 (``parameters/supercell.yml``), each with its own SCF parameters
 (k-point mesh, scf_thr, mixing settings, …) applied on top of the
 shared ``parameters/abacus/scf.yml`` preset.
+
+The child mode follows the preset's ``calculation``: ``scf`` by default,
+or e.g. ``nscf`` to diagonalise once on a charge density supplied via
+``init_chg file`` (+ ``read_file_dir``).
 
 Outline: generate_supercells → submit_scfs → inspect_scfs →
 collect_results.
@@ -29,19 +33,104 @@ _PluginBaseWorkChain = WorkflowFactory("abacus.base")
 _SCF_OVERRIDE_KEYS = (
     "scf_thr",
     "scf_nmax",
+    "ecutwfc",
     "mixing_beta",
     "mixing_beta_mag",
     "mixing_angle",
     "mixing_ndim",
     "mixing_type",
+    # Kerker preconditioning of the charge-density residual (ABACUS
+    # default 1.0; ``0`` switches Kerker off, which the convergence
+    # manual recommends for localized d/f systems such as actinides).
+    # gg0 = (mixing_gg0 × 0.529177 / tpiba)², so the same value damps
+    # harder in a larger cell — only compare mixing_gg0 across cells of
+    # equal size. ABACUS silently skips Kerker when mixing_beta <= 0.1
+    # (charge_mixing_preconditioner.cpp), so a gg0 scan needs
+    # mixing_beta > 0.1 (lcao_1q: 0.5). Per-cell overridable so the
+    # Kerker strength can be scanned (test_mixing_gg0).
+    "mixing_gg0",
+    "mixing_gg0_min",
+
+    # Mixing-restart ladder (ABACUS >= v3.6.0; the ``abacus_lts`` driver
+    # is v3.10.0): once drho drops to ``mixing_restart`` the SCF clears
+    # its mixing history and continues from the current density.
+    # ``mixing_dmr`` additionally mixes the real-space density matrix —
+    # it only feeds back into the potential for DFT+U / EXX / DeePKS, so
+    # in a plain SCF it costs the DM-mixing buffers without changing the
+    # physics. Per-cell overridable so the restart threshold can be
+    # scanned (test_mixing_restart).
+    "mixing_restart",
+    "mixing_dmr",
+
+    # Oscillation guard (ABACUS >= v3.5.0; present in the v3.10.0 driver).
+    # ``scf_os_stop 1`` aborts the SCF once the least-squares slope of
+    # log10(drho) over the last ``scf_os_ndim`` iterations exceeds
+    # ``scf_os_thr`` (default -0.01, i.e. drho no longer falling by >2.3%
+    # per step) — see Charge_Mixing::if_scf_oscillate. It only fires on
+    # runs that are already failing, so it is pure wallclock savings:
+    # the 2662-atom run 384005 burned 38 steps x 2250 s and hit the
+    # 24 h wallclock without ever converging; this would have stopped it
+    # around ELEC 6. Default off (ABACUS scf_os_stop = false).
+    # Verified accepted by abacus_lts@yeesuan (v3.10.0) 2026-09-21:
+    # a 2-atom smoke run echoed scf_os_stop/scf_os_thr/scf_os_ndim=24 in
+    # OUT.smoke/INPUT and exited 0.
+    "scf_os_stop",
+    "scf_os_thr",
+    "scf_os_ndim",
     "smearing_method",
     "smearing_sigma",
     "nelec",
+    "nbands",  # cap the number of bands (diagonaliser nev) — auto is
+    # 1.2× occupied; test whether 1.1×/1.15× still converges the energy
+    # (check the top-band occupations ≈ 0 in the log)
     "symmetry",  # 0 disables rhog_symmetry — a known ABACUS bottleneck
     # on large supercells (density symmetrization can exceed 80% of the
     # wall time; with a 1×1×1 k-mesh it is pure overhead).
     "gamma_only",  # 1 → real-matrix fast path for a single Gamma point
-    "ks_solver",  # genelpa/elpa/scalapack_gvx/cg/dav — diagonaliser
+    "ks_solver",  # genelpa/elpa/scalapack_gvx/cg/dav/pexsi
+    "calculation",  # scf (default) / nscf — nscf runs on the density
+    # read via ``init_chg file`` and needs ``nbands``
+    # ------------------------------------------------------------------
+    # PEXSI (LCAO + Γ only). All of these are per-cell overridable so a
+    # verification step (one knob per step, para_test style) can put every
+    # value of that knob into a single protocol preset:
+    #   1_method     pexsi_method       1 contour / 2 Moussa / 3 AAA
+    #   2_npole      pexsi_npole        hard table caps: m2 <= 61, m3 <= 40,
+    #                                   m1 <= 120 (getPole error otherwise)
+    #   3_delta_e    pexsi_delta_e      spectral radius of S^-1 H, in Ry
+    #   4_mu_bounds  pexsi_mu_lower / pexsi_mu_upper
+    #                ★ the mu search only resolves mu to
+    #                  (mu_upper - mu_lower)/81 Ry. ABACUS's default ∓10 Ry
+    #                  gives 0.25 Ry = 3.4 eV, which is why the returned
+    #                  density matrix carries a ~13 % charge error and the
+    #                  SCF never closes. Tighten it around the Fermi level
+    #                  (estimate mu from a converged genelpa run: where the
+    #                  occupations cross 2 -> 0 in OUT.<suffix>/eig_occ.txt).
+    #   5_temp       pexsi_temp         must equal smearing_sigma (Ry)
+    #   6_mixing     mixing_beta        PEXSI limit-cycles at 0.5
+    #   7_nproc_pole pexsi_nproc_pole   must divide the MPI rank count
+    # ------------------------------------------------------------------
+    "pexsi_npole",
+    "pexsi_temp",
+    "pexsi_nproc_pole",
+    "pexsi_elec_thr",
+    "pexsi_mu_thr",
+    "pexsi_method",
+    "pexsi_delta_e",
+    "pexsi_mu_lower",
+    "pexsi_mu_upper",
+    "pexsi_mu",
+    "pexsi_gap",
+    "pexsi_inertia",
+    "pexsi_nmax",
+    "pexsi_zero_thr",
+    "pexsi_ordering",
+    "pexsi_row_ordering",
+    "pexsi_nproc",
+    "pexsi_symm",
+    "pexsi_trans",
+    "pexsi_storage",
+    "pexsi_comm",
 )
 
 
@@ -206,21 +295,42 @@ class SupercellScfWorkChain(WorkChain):
         return child_inputs
 
     def inspect_scfs(self):
-        """Fail fast if any supercell SCF did not finish OK."""
+        """Record which supercell SCFs failed, then keep going.
+
+        A parameter scan (see the ``pexsi_*`` verification steps) routinely
+        contains cells that are *expected* to fail — a pole count outside
+        PEXSI's table, a solve that cannot converge. Aborting here would
+        throw away the successful cells and leave the whole WorkChain
+        without ``output_parameters``, so the report/collector could not
+        show anything. Instead the failures are noted, ``collect_results``
+        still writes every cell into the output Dict, and the WorkChain
+        returns ``ERROR_CHILD`` at the very end so the batch is still
+        flagged as failed.
+        """
+        failed = []
         for cell in self.ctx.cells:
             child = getattr(self.ctx, f"scf_{cell['idx']}", None)
             if child is None or not child.is_finished_ok:
+                failed.append(cell["label"])
                 self.report(
                     f"supercell {cell['label']} SCF failed "
                     f"(pk={getattr(child, 'pk', None)}, "
                     f"exit={getattr(child, 'exit_status', None)})"
                 )
-                return self.exit_codes.ERROR_CHILD
-        self.report("all supercell SCFs finished OK")
+        self.ctx.failed_cells = failed
+        if failed:
+            self.report(f"{len(failed)}/{len(self.ctx.cells)} supercell SCF(s) failed: {failed}")
+        else:
+            self.report("all supercell SCFs finished OK")
         return None
 
     def collect_results(self):
-        """Collect energies / volumes / SCF stats and package results."""
+        """Collect energies / volumes / SCF stats and package results.
+
+        Cells whose SCF failed are recorded too (``status``/``exit_status``,
+        ``energy`` = None) so a partially failed scan is still tabulated;
+        the missing total energy is no longer fatal.
+        """
         from aiida_uranium_workflow.utils.parsers import fetch_summary
 
         results = {"workflow": "supercell", "backend": "abacus", "cells": []}
@@ -228,27 +338,36 @@ class SupercellScfWorkChain(WorkChain):
             child = getattr(self.ctx, f"scf_{cell['idx']}")
             summary = fetch_summary(child, "abacus")
             energy = summary.get("energy_ev")
-            if energy is None:
-                self.report(f"supercell {cell['label']} has no total_energy")
-                return self.exit_codes.ERROR_PARSER
             volume = float(cell["structure"].get_cell_volume())
             natoms = len(cell["structure"].sites)
-            results["cells"].append(
-                {
-                    "label": cell["label"],
-                    "matrix": cell["matrix"],
-                    "natoms": natoms,
-                    "volume": round(volume, 6),
-                    "volume_units": "A^3",
-                    "energy": float(energy),
-                    "energy_units": "eV",
-                    "time_s": summary.get("time_s"),
-                    "scf_steps": summary.get("scf_steps"),
-                    "scf_pk": child.pk,
-                }
-            )
+            entry = {
+                "label": cell["label"],
+                "matrix": cell["matrix"],
+                "natoms": natoms,
+                "volume": round(volume, 6),
+                "volume_units": "A^3",
+                "energy": float(energy) if energy is not None else None,
+                "energy_units": "eV",
+                "energy_per_atom": (float(energy) / natoms) if energy is not None and natoms else None,
+                "energy_per_atom_units": "eV/atom",
+                "time_s": summary.get("time_s"),
+                "scf_steps": summary.get("scf_steps"),
+                "scf_pk": child.pk,
+                "status": "ok" if energy is not None else "failed",
+                "exit_status": getattr(child, "exit_status", None),
+            }
+            if energy is None:
+                self.report(f"supercell {cell['label']} has no total_energy (recorded as failed)")
+            results["cells"].append(entry)
+        failed = [c["label"] for c in results["cells"] if c["status"] != "ok"]
+        results["failed_cells"] = failed
+        results["n_cells"] = len(results["cells"])
+        results["n_failed"] = len(failed)
         self.out(
             "output_parameters",
             _collect_supercell_results(results=orm.Dict(dict=results)),
         )
+        if failed:
+            self.report(f"finished with {len(failed)} failed cell(s): {failed}")
+            return self.exit_codes.ERROR_CHILD
         return None

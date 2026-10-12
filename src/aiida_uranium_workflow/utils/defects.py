@@ -46,6 +46,218 @@ def make_supercell(structure, supercell_matrix: List[int]):
     return StructureData(pymatgen=pmg)
 
 
+def _is_diagonal_triple(value) -> bool:
+    """``[n, n, n]`` — the shorthand for a diagonal supercell."""
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) == 3
+        and all(isinstance(v, (int, float)) for v in value)
+        and value[0] == value[1] == value[2]
+    )
+
+
+def normalize_supercell_matrices(spec) -> List[list]:
+    """Normalise a preset ``supercell_matrix`` / ``supercell_matrices`` value.
+
+    Accepted forms::
+
+        None                                  -> []
+        [2, 2, 2]                             -> [[2, 2, 2]]        (one cell)
+        [[2,0,0], [0,2,0], [0,0,2]]           -> [that 3x3 matrix]  (one cell)
+        [[2,2,2], [3,3,3]]                    -> two diagonal cells
+        [[[2,0,0],[0,2,0],[0,0,2]], [3,3,3]]  -> a 3x3 and a diagonal cell
+        [[2,2,2], [3,3,3], [4,4,4]]           -> three diagonal cells
+          (three ``[n, n, n]`` rows are read as a *list*; to pass a real
+           3x3 matrix use ``supercell_matrices: [[[...]]]`` or write it with
+           non-uniform rows)
+
+    Returns a list of matrices, each either a 3-element diagonal shorthand or
+    a full 3x3 nested list (both accepted by ``pymatgen.make_supercell``).
+    """
+    if spec is None:
+        return []
+    if isinstance(spec, (str, bytes)) or not isinstance(spec, (list, tuple)):
+        raise TypeError(
+            f"supercell matrix must be a list, got {type(spec).__name__}"
+        )
+    items = list(spec)
+    if not items:
+        return []
+
+    # flat [a, b, c] — a single diagonal supercell
+    if all(isinstance(v, (int, float)) for v in items):
+        if len(items) != 3:
+            raise ValueError(
+                f"diagonal supercell must have 3 entries, got {items!r}"
+            )
+        return [items]
+
+    if not all(isinstance(v, (list, tuple)) for v in items):
+        raise TypeError(f"malformed supercell matrix {spec!r}")
+
+    # [[a,b,c], [d,e,f], [g,h,i]]: a full 3x3 matrix OR three diagonal cells
+    if len(items) == 3 and all(len(v) == 3 for v in items):
+        if all(_is_diagonal_triple(v) for v in items):
+            return [list(v) for v in items]
+        return [[list(v) for v in items]]
+
+    # list of matrices (each a 3x3 or a diagonal triple)
+    out = []
+    for item in items:
+        item = list(item)
+        if all(isinstance(v, (int, float)) for v in item):
+            if len(item) != 3:
+                raise ValueError(
+                    f"diagonal supercell must have 3 entries, got {item!r}"
+                )
+            out.append(item)
+        elif len(item) == 3 and all(len(row) == 3 for row in item):
+            out.append([list(row) for row in item])
+        else:
+            raise ValueError(f"malformed supercell matrix entry {item!r}")
+    return out
+
+
+#: ABACUS ``INPUT`` keys a *single* supercell entry may override on top of
+#: the shared SCF base preset (``parameters/<backend>/scf.yml``). The key
+#: use case is the mixing history: a 249-atom vacancy converges with
+#: ``mixing_ndim: 16`` while the 431-atom one needs 20-24 — see the defect
+#: protocol header for the measured values.
+PER_CELL_SCF_KEYS = (
+    "scf_thr",
+    "scf_nmax",
+    "mixing_type",
+    "mixing_beta",
+    "mixing_ndim",
+    "mixing_gg0",
+    "mixing_restart",
+    "mixing_dmr",
+    "smearing_method",
+    "smearing_sigma",
+    "ks_solver",
+    "nbands",
+    "symmetry",
+    "gamma_only",
+    "nelec",
+)
+
+
+def normalize_single_matrix(value) -> list:
+    """Normalise one supercell matrix: ``[2, 2, 2]`` or a full 3x3 list."""
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"supercell matrix must be a list, got {value!r}")
+    items = list(value)
+    if all(isinstance(v, (int, float)) for v in items):
+        if len(items) != 3:
+            raise ValueError(f"diagonal supercell must have 3 entries, got {items!r}")
+        return items
+    if len(items) == 3 and all(
+        isinstance(row, (list, tuple)) and len(row) == 3 for row in items
+    ):
+        return [[float(v) if isinstance(v, float) else int(v) for v in row] for row in items]
+    raise ValueError(f"malformed supercell matrix {value!r}")
+
+
+def normalize_supercell_cells(spec) -> List[dict]:
+    """Normalise a preset cell list into ``[{'matrix': …, …}, …]``.
+
+    Every entry is either a bare matrix (``[2, 2, 2]`` or a 3x3 list) or a
+    mapping with the matrix plus optional per-cell settings::
+
+        - {matrix: [2, 2, 2], kpoints_mesh: [7, 7, 7]}
+        - {matrix: [3, 3, 3], kpoints_mesh: [5, 5, 5], label: "3x3x3"}
+        - {matrix: [4, 4, 4], kpoints_distance: 0.1}   # 1/A
+        - [2, 2, 2]                                    # bare matrix
+        - {matrix: null}                               # input cell as host
+
+    Returns a list of dicts with the keys ``matrix`` (or ``None``),
+    ``kpoints_mesh``, ``kpoints_distance`` and ``label``.
+    """
+    if spec is None:
+        return []
+    if isinstance(spec, (str, bytes)) or not isinstance(spec, (list, tuple)):
+        raise TypeError(f"supercell cells must be a list, got {type(spec).__name__}")
+    items = list(spec)
+    if not items:
+        return []
+
+    # a bare matrix given directly ([2,2,2] / 3x3) → single cell
+    if all(isinstance(v, (int, float)) for v in items):
+        return [{"matrix": normalize_single_matrix(items)}]
+    if len(items) == 3 and all(
+        isinstance(v, (list, tuple)) and len(v) == 3 for v in items
+    ) and not all(_is_diagonal_triple(v) for v in items):
+        # rows with off-diagonal elements → one real 3x3 matrix
+        return [{"matrix": normalize_single_matrix(items)}]
+
+    out = []
+    for item in items:
+        if isinstance(item, dict):
+            kwargs = dict(item)
+            matrix = kwargs.pop("matrix", None)
+            cell = {"matrix": normalize_single_matrix(matrix) if matrix is not None else None}
+            mesh = kwargs.pop("kpoints_mesh", None)
+            if mesh is not None:
+                cell["kpoints_mesh"] = [int(v) for v in mesh]
+            distance = kwargs.pop("kpoints_distance", None)
+            if distance is not None:
+                cell["kpoints_distance"] = float(distance)
+            label = kwargs.pop("label", None)
+            if label is not None:
+                cell["label"] = str(label)
+            # per-cell SCF overrides (ABACUS INPUT keys) — the larger
+            # supercells need a longer mixing history to converge:
+            #   - {matrix: [6, 6, 6], mixing_ndim: 24}
+            scf = {k: kwargs.pop(k) for k in list(kwargs) if k in PER_CELL_SCF_KEYS}
+            # Idempotency: the CLI adapter normalises the protocol once
+            # already, so the WorkChain receives entries that carry the
+            # collected overrides under the 'scf' key. Accept them as-is
+            # (instead of failing with "unknown per-cell keys ['scf']").
+            existing = kwargs.pop("scf", None)
+            if existing is not None:
+                if not isinstance(existing, dict):
+                    raise TypeError(
+                        f"per-cell 'scf' must be a mapping of ABACUS INPUT "
+                        f"keys, got {existing!r}"
+                    )
+                unknown = sorted(set(existing) - set(PER_CELL_SCF_KEYS))
+                if unknown:
+                    raise ValueError(
+                        f"unknown SCF override keys {unknown} in {item!r} "
+                        f"(allowed: {list(PER_CELL_SCF_KEYS)})"
+                    )
+                scf = {**existing, **scf}
+            if scf:
+                cell["scf"] = scf
+            if kwargs:
+                raise ValueError(
+                    f"unknown per-cell keys {sorted(kwargs)} in {item!r} "
+                    "(allowed: matrix, kpoints_mesh, kpoints_distance, label, "
+                    f"plus SCF overrides {list(PER_CELL_SCF_KEYS)})"
+                )
+            out.append(cell)
+        else:
+            out.append({"matrix": normalize_single_matrix(item)})
+    return out
+
+
+def supercell_label(matrix) -> str:
+    """Short label for a supercell matrix: ``2x2x2`` (diagonal) or ``m3x3``."""
+    import numpy as np
+
+    arr = np.asarray(matrix, dtype=float)
+    if arr.shape == (3,):
+        if arr[0] == arr[1] == arr[2]:
+            return f"{int(arr[0])}x{int(arr[1])}x{int(arr[2])}"
+        return "diag" + "-".join(str(int(v)) for v in arr)
+    if arr.shape == (3, 3):
+        diag = np.diag(arr)
+        off = arr - np.diag(diag)
+        if np.allclose(off, 0):
+            return f"{int(diag[0])}x{int(diag[1])}x{int(diag[2])}"
+    return "m3x3"
+
+
 def _to_pymatgen(structure):
     from pymatgen.core import Structure as PmgStructure
 

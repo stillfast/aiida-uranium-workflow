@@ -2,5 +2,6 @@
 
 from .abacus import AbacusEosAdapter
 from .fleur import FleurEosAdapter
+from .qe import QeEosAdapter
 
-__all__ = ["AbacusEosAdapter", "FleurEosAdapter"]
+__all__ = ["AbacusEosAdapter", "FleurEosAdapter", "QeEosAdapter"]

@@ -114,32 +114,39 @@ class ConfigLoader:
         self._validate_static()
 
     def _validate_static(self) -> None:
-        """Validate ``static.structure`` accepts a string or a list of strings.
+        """Validate ``static.structure``.
 
-        Strings are the legacy single-structure form; the list form
-        causes the orchestrator to submit one WorkChain per structure.
-        Anything else is rejected up-front so a malformed input fails at
-        load time rather than after profile / AiiDA setup.
+        Accepted: a single entry or a non-empty list of entries, each of
+        which is
+
+        * a registry name (``"bcc-uranium-abacus"``) resolved against
+          ``static/structure.yml``;
+        * a pk (``12345`` / ``"12345"`` / ``{"pk": 12345}``) or a uuid
+          (``"3f2a…-…"`` / ``{"uuid": "…"}``) of an already-stored
+          ``StructureData`` node.
+
+        The list form causes the orchestrator to submit one WorkChain per
+        structure. Anything else is rejected up-front so a malformed input
+        fails at load time rather than after profile / AiiDA setup.
         """
+        from aiida_uranium_workflow.utils.structure import classify_structure_ref
+
         static = self.input_params.get("static", {})
         if not isinstance(static, dict) or "structure" not in static:
             raise KeyError("input.json is missing 'static.structure'")
         struct = static["structure"]
-        if isinstance(struct, str):
-            return
-        if isinstance(struct, (list, tuple)):
-            if not struct:
-                raise ValueError("'static.structure' list must be non-empty")
-            if not all(isinstance(s, str) for s in struct):
+        refs = list(struct) if isinstance(struct, (list, tuple)) else [struct]
+        if isinstance(struct, (list, tuple)) and not refs:
+            raise ValueError("'static.structure' list must be non-empty")
+        for ref in refs:
+            try:
+                classify_structure_ref(ref)
+            except (TypeError, ValueError) as exc:
                 raise TypeError(
-                    "'static.structure' must be a string or a list of strings, "
-                    f"got {struct!r}"
-                )
-            return
-        raise TypeError(
-            "'static.structure' must be a string or a list of strings, "
-            f"got type {type(struct).__name__}"
-        )
+                    "'static.structure' entries must be a registry name, a pk "
+                    "(int or digit string), a uuid, or a {'pk'|'uuid': …} dict "
+                    f"— got {ref!r} ({exc})"
+                ) from exc
 
     def _protocol_names(self, entry) -> list[str]:
         """Resolve ``parameters[<workflow_key>]`` to a list of preset names.

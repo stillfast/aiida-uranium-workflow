@@ -72,7 +72,9 @@ def generate_summary_table(output_params: Dict[str, Any]) -> str:
     ]
     lines = ["| Property | Value |", "| --- | --- |"]
     for name, value in rows:
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value is None:
+            value = "—"
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
             value = _fmt(value)
         lines.append(f"| {name} | {value} |")
     return "\n".join(lines)

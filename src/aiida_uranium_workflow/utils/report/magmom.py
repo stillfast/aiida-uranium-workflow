@@ -174,14 +174,13 @@ def generate_magmom_matrix_table(
     FLEUR backend (ABACUS's ``misc`` reports the cell total per
     electronic step only, not per-atom moments).
     """
-    # Energies — native unit per backend (Htr for FLEUR, Ry for QE, eV
-    # otherwise).
+    # Energies — native unit per backend (Htr for FLEUR, eV otherwise).
+    # QE energies arrive already in eV: aiida-qe converts the pw.x XML
+    # energy from Ry inside its parser (see QePwChildParser), so the
+    # ΔE vs ref (meV) must NOT be multiplied by the Hartree factor.
     if workflow_type == "fleur":
         energy = output_params.get("total_energy_hartree") or {}
         e_unit = "Htr"
-    elif workflow_type == "qe":
-        energy = output_params.get("final_energy") or {}
-        e_unit = "Ry"
     else:
         energy = output_params.get("final_energy") or {}
         e_unit = "eV"

@@ -126,7 +126,7 @@ class MagmomWorkflowOrchestrator(WorkflowOrchestrator):
         "abacus": "magmom",
         "vasp": "magmom",
         "fleur": "magmom",
-        "qe": "magmom",
+        "qe": "scf",
     }
 
 

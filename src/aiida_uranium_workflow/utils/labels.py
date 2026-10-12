@@ -189,6 +189,11 @@ def format_magmom_label(
     parts: list[str] = []
     if isinstance(mag_value, Mapping):
         for element, value in mag_value.items():
+            # Reserved per-species keys (e.g. ``angle1`` holding a dict
+            # of degrees) are not magnetisation values — skip them in the
+            # label (the species magnitudes already identify the config).
+            if isinstance(value, Mapping):
+                continue
             if isinstance(value, (list, tuple)):
                 inner = "_".join(_scalar_token(float(v)) for v in value)
             else:

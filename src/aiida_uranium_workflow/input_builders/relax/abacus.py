@@ -10,7 +10,7 @@ custom WorkChain is needed.
 
 from __future__ import annotations
 
-from ..base import SoftwareAdapter
+from ..base import filter_scheduler_options, SoftwareAdapter
 from typing import Any
 
 
@@ -38,7 +38,9 @@ class AbacusRelaxAdapter(SoftwareAdapter):
         # carry 'calculation' — the preset does; force it here.
         params["input"]["calculation"] = "cell-relax"
 
-        options = self.metadata.get("options", {})
+        options = filter_scheduler_options(
+            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+        )
 
         base: dict[str, Any] = {
             "abacus": {

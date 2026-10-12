@@ -129,6 +129,7 @@ def write_preview_files(
     out_workflow.mkdir(parents=True, exist_ok=True)
 
     written: List[Path] = []
+    invalid: List[str] = []
     for job in jobs:
         preset = job.preset_name  # may be "preset/protocol" (list form)
         stem = _slugify(f"{job.backend}_{preset}_{job.structure_name}")
@@ -141,9 +142,31 @@ def write_preview_files(
             "workchain": job.workchain_cls.__name__,
             "inputs": serialize_inputs(job.inputs),
         }
+        # Dry-run the port validation the engine runs at submit time, so a
+        # bad input fails here (exit 1, the offending job is flagged in its
+        # YAML) and not after ``aiida-uranium run`` has already been typed.
+        # Catches e.g. a metadata option the CalcJob's non-dynamic
+        # ``metadata.options`` namespace rejects, or a ``pseudo_family``
+        # that is not installed.
+        error = None
+        if callable(getattr(job.workchain_cls, "spec", None)):
+            try:
+                error = job.workchain_cls.spec().inputs.validate(job.inputs)
+            except ValueError as exc:  # a port validator raised
+                error = f"{type(exc).__name__}: {exc}"
+            except Exception:  # noqa: BLE001 — stub class without a real spec
+                error = None
+        if error is not None:
+            invalid.append(f"{payload['workchain']} ({job.backend}/{preset}, {job.structure_name}): {error}")
+            payload["INVALID"] = str(error)
         if protocol_preset:
             payload["protocol_preset"] = protocol_preset
         with open(path, "w", encoding="utf-8") as handle:
             yaml.safe_dump(payload, handle, sort_keys=False, allow_unicode=True)
         written.append(path)
+
+    if invalid:
+        raise ValueError(
+            "端口校验失败（这些输入提交时一定会报错）:\n  - " + "\n  - ".join(invalid)
+        )
     return written

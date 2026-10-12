@@ -84,7 +84,9 @@ class AbacusDefectsWorkChain(DefectsWorkChainBase):
             _PluginRelaxWorkChain if self._mode() == "relax" else _PluginBaseWorkChain
         )
 
-    def _make_calc_inputs(self, structure, label: str) -> Dict[str, Any]:
+    def _make_calc_inputs(
+        self, structure, label: str, kpoints=None, scf_overrides=None
+    ) -> Dict[str, Any]:
         base = dict(self.inputs.base) if "base" in self.inputs else {}
         params = (
             dict(base["abacus"]["parameters"].get_dict())
@@ -92,6 +94,10 @@ class AbacusDefectsWorkChain(DefectsWorkChainBase):
             else {}
         )
         params.setdefault("input", {})
+        # Per-cell SCF overrides from the protocol (e.g. ``mixing_ndim: 24``
+        # for a large supercell) win over the shared SCF base preset.
+        if scf_overrides:
+            params["input"].update(dict(scf_overrides))
 
         if self._mode() == "relax":
             # abacus.relax: structure at top level, SCF base in the
@@ -111,12 +117,18 @@ class AbacusDefectsWorkChain(DefectsWorkChainBase):
             }
             if "metadata" in base["abacus"]:
                 base_ns["abacus"]["metadata"] = base["abacus"]["metadata"]
-            if "kpoints" in base:
+            if kpoints is not None:  # per-cell k-mesh override
+                base_ns["kpoints"] = kpoints
+            elif "kpoints" in base:
                 base_ns["kpoints"] = base["kpoints"]
             elif "kpoints_distance" in base:
                 base_ns["kpoints_distance"] = base["kpoints_distance"]
             if "pseudo_family" in base:
                 base_ns["pseudo_family"] = base["pseudo_family"]
+            # ``abacus.relax`` exposes the base WorkChain namespace, so the
+            # restart budget travels as ``base.max_iterations`` (default 0:
+            # no automatic SCF retry — see the WorkChain input's help).
+            base_ns["max_iterations"] = orm.Int(self._child_max_iterations())
 
             inputs: Dict[str, Any] = {
                 "structure": structure,
@@ -139,12 +151,17 @@ class AbacusDefectsWorkChain(DefectsWorkChainBase):
             }
             if "metadata" in base["abacus"]:
                 inputs["abacus"]["metadata"] = base["abacus"]["metadata"]
-            if "kpoints" in base:
+            if kpoints is not None:  # per-cell k-mesh override
+                inputs["kpoints"] = kpoints
+            elif "kpoints" in base:
                 inputs["kpoints"] = base["kpoints"]
             elif "kpoints_distance" in base:
                 inputs["kpoints_distance"] = base["kpoints_distance"]
             if "pseudo_family" in base:
                 inputs["pseudo_family"] = base["pseudo_family"]
+            # scf mode submits ``abacus.base`` directly → its own top-level
+            # ``max_iterations`` port (default 0: no SCF retry ladder).
+            inputs["max_iterations"] = orm.Int(self._child_max_iterations())
 
         inputs["metadata"] = {
             "label": f"defects_{label}",
@@ -160,3 +177,18 @@ class AbacusDefectsWorkChain(DefectsWorkChainBase):
         workchain outputs), so the same access works for both modes.
         """
         return float(workchain.outputs.misc.get_dict()["total_energy"])
+
+    def _read_summary(self, workchain) -> dict:
+        """Wall time + electronic steps of a finished child (for the report).
+
+        ``fetch_summary`` reads the ABACUS ``running_scf.log`` (``Total
+        Time`` and the iteration table) through the child's ``retrieved``
+        folder; it returns ``None`` for the individual fields when the file
+        is missing, so a failed-but-finished child cannot break the scan.
+        """
+        from aiida_uranium_workflow.utils.parsers import fetch_summary
+
+        try:
+            return fetch_summary(workchain, "abacus")
+        except Exception:  # noqa: BLE001 — timings are best-effort
+            return {}

@@ -14,7 +14,7 @@ Translates a :class:`ParamBundle` into the ``inputs`` dict expected by
 
 from __future__ import annotations
 
-from ..base import AdaptedInputs, SoftwareAdapter
+from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
 from typing import Any, Tuple
 
 import copy
@@ -106,7 +106,9 @@ class AbacusPhonopyAdapter(SoftwareAdapter):
         params["input"]["calculation"] = "scf"
         params["input"]["cal_force"] = 1
 
-        options = self.metadata.get("options", {})
+        options = filter_scheduler_options(
+            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+        )
         base: dict[str, Any] = {
             "abacus": {
                 "code": orm.load_code(self.code_label),
@@ -170,7 +172,9 @@ class AbacusPhonopyAdapter(SoftwareAdapter):
         # does not override them — without a wall-time the scheduler's
         # default (often short) can kill the job mid-run, leaving an
         # incomplete stdout (aiida-phonopy exit 312).
-        meta_opts = self.metadata.get("options", {}) or {}
+        meta_opts = filter_scheduler_options(
+            self.metadata.get("options", {}) or {}, entry_point=self._workchain_entry_point(), backend=self.name
+        )
         for key in ("max_wallclock_seconds", "queue_name"):
             if key not in ph_options and meta_opts.get(key) is not None:
                 ph_options[key] = meta_opts[key]

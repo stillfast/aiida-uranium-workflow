@@ -28,8 +28,12 @@ class AbacusSupercellAdapter(SoftwareAdapter):
 
         params = copy.deepcopy(self.software_params["parameters"])
 
-        # Fixed-lattice SCF — the cell stays at the supercell volume.
-        params["input"]["calculation"] = "scf"
+        # Fixed-lattice run — the cell stays at the supercell volume.
+        # ``calculation`` defaults to ``scf`` but an explicit value in the
+        # preset is honoured (e.g. ``calculation: nscf`` to run a
+        # non-self-consistent step on the stored density read via
+        # ``init_chg file``).
+        params["input"].setdefault("calculation", "scf")
 
         options = self.metadata.get("options", {})
         base: dict[str, Any] = {
@@ -39,6 +43,24 @@ class AbacusSupercellAdapter(SoftwareAdapter):
                 "metadata": {"options": options} if options else {},
             },
         }
+        # Forward the SCF preset's ``setting`` (retrieve list) and
+        # ``extra_files`` / ``extra_files_basepath`` (e.g. a pre-expanded
+        # SPIN1_CHG.cube read via ``init_chg file``) to the per-cell
+        # abacus.base children — ``SupercellScfWorkChain._scf_inputs_for``
+        # already copies every non-``parameters`` ``abacus`` key through.
+        entry = self.software_params
+        setting = entry.get("setting") or entry.get("settings")
+        if setting:
+            base["abacus"]["settings"] = orm.Dict(dict=copy.deepcopy(dict(setting)))
+        from ..base import resolve_extra_files
+
+        extra_files = resolve_extra_files(entry.get("extra_files"))
+        if extra_files:
+            base["abacus"]["extra_files"] = extra_files
+        if entry.get("extra_files_basepath"):
+            base["abacus"]["extra_files_basepath"] = orm.Str(
+                str(entry["extra_files_basepath"])
+            )
         if "kpoints_distance" in self.software_params:
             base["kpoints_distance"] = orm.Float(
                 float(self.software_params["kpoints_distance"])

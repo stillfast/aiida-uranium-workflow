@@ -15,14 +15,24 @@ test:
 
 test_simple:
   # TODO: you should devide it into abacus and vasp's smear workchain format.
-  smear_list:
-    - mp
-  sigma_list: # the unit is eV
-    - 0.3
-    - 0.2
-    - 0.1
-    - 0.08
-    - 0.06
+  abacus:
+    smearing_method_list:
+      - mp
+      - gauss
+    smearing_sigma_list: # the unit is Ry
+      - 0.0225
+      - 0.0150
+      - 0.0100
+      - 0.0075
+  vasp:
+    smear_list:
+      - 0
+      - 1
+    sigma_list: # the unit is eV
+      - 0.3
+      - 0.2
+      - 0.15
+      - 0.1
 
 gauss:
   # TODO: you should devide it into abacus and vasp's smear workchain format.

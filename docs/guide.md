@@ -168,9 +168,9 @@ CLI 在 `pyproject.toml` 注册为 `[project.scripts] aiida-uranium = ...`；**�
 {
   "workflow": "smear",                       // ← 必填：smear | convergence | magmom | base
   "parameters": {                            // ← 必填：每个 backend 的 preset 列表
-    "abacus": {"abacus": "test"},            //  ← {"<sub-key>": ["preset_name", ...]}
-    "vasp":   {"vasp":   "test"},
-    "smear":  "test"                          // ← 可选：protocol 名（与 parameters/<method>.yml 对应）
+    "abacus": {"test": ["smear_lcao", "pw"]},//  ← {"<category>": ["preset_name", ...]}
+    "vasp":   {"test": "test_smear"},        //     category = parameters/<backend>/<category>.yml
+    "smear":  "test_simple"                   // ← 可选：protocol 名（与 parameters/<method>.yml 对应）
   },
   "static": {                                 // ← 必填：结构与计算 metadata
     "structure": "bcc-uranium",              //  ← static/structure.yml 的 key
@@ -189,7 +189,7 @@ CLI 在 `pyproject.toml` 注册为 `[project.scripts] aiida-uranium = ...`；**�
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `workflow` | `str` | ✓ | 调度的 orchestrator 名（`smear` / `convergence` / `magmom` / `base`）。新增 → 见 §15.2。 |
-| `parameters` | `dict[str, dict \| str]` | ✓ | 每个 backend 一个 sub-key，value 是 `<backend_subkey> → [preset_names...]` 的 dict。`smear` / `convergence` / `magmom` 这三个 method 名作为**可选**顶级 key 时会被解释为 **protocol 名**（`parameters/<method>.yml` 中的 section 名）。 |
+| `parameters` | `dict[str, dict \| str]` | ✓ | 每个 backend 一个 sub-key，value 是 `<category> → [preset_names...]` 的 dict（`category` 即 `parameters/<backend>/<category>.yml`，如 `test` / `scf` / `temporary`）。`smear` / `convergence` / `magmom` 这三个 method 名作为**可选**顶级 key 时会被解释为 **protocol 名**（`parameters/<method>.yml` 中的 section 名）。 |
 | `static.structure` | `str` 或 `list[str]` | ✓ | `static/structure.yml` 的 key。**字符串** = 单结构；**列表** = 批处理，每个元素跑一份独立 WorkChain。 |
 | `static.metadata` | `str` | ✓ | `static/metadata.yml` 的 key。AiiDA 计算资源 / 队列名 / wallclock 来自这里。 |
 | `profile` | `str` | ✗ | AiiDA profile 名；缺省 = 默认 profile。 |
@@ -225,36 +225,74 @@ CLI 在 `pyproject.toml` 注册为 `[project.scripts] aiida-uranium = ...`；**�
 
 ### 5.1 目录布局
 
-```
-parameters/
-├── smear.yml           ← 协议层 (top-level)
-├── convergence.yml     ← 协议层
-├── magmom.yml          ← 协议层
-├── abacus/             ← 后端层 (per-backend default)
-│   ├── abacus.yml
-│   ├── smear.yml       ← per-method 覆盖
-│   ├── convergence.yml
-│   └── magmom.yml
-└── vasp/
-    ├── vasp.yml
-    ├── smear.yml
-    ├── convergence.yml
-    └── magmom.yml
-```
-
-### 5.2 加载优先级（`utils/config.py:ConfigLoader`）
+`parameters/` 与 `static/` 成对构成一个**数据根**（见 §5.2），目录内容如下：
 
 ```
-backend_specific (parameters/<code>/<method>.yml)   ← 最高优先
-              ↓ 覆盖
-backend_default (parameters/<code>/<code>.yml)
-              ↓ 覆盖
-protocol (parameters/<method>.yml)        ← 最低优先
+<数据根>/
+├── parameters/
+│   ├── smear.yml           ← 协议层：method 级（每 backend 一个顶层块）
+│   ├── convergence.yml     ← 协议层
+│   ├── magmom.yml          ← 协议层
+│   ├── banddos.yml / defects.yml / elastic.yml / elastic_cubic.yml /
+│   │   eos.yml / phonopy.yml / relax.yml / supercell.yml
+│   │
+│   ├── abacus/             ← 后端层：<category>.yml，category 由 input.json 指定
+│   │   ├── scf.yml         ← 生产 SCF preset（跨 method 复用）
+│   │   ├── test.yml        ← 测试 preset
+│   │   └── temporary.yml   ← 临时 / 一次性 preset
+│   ├── vasp/    {scf,test,temporary}.yml
+│   ├── fleur/   {scf,test,temporary}.yml
+│   └── qe/      {scf,test,temporary}.yml
+└── static/
+    ├── metadata.yml        ← 队列 / walltime / resources（站点私有）
+    └── structure.yml       ← 结构注册表（pyxtal 参数）
 ```
 
-`ConfigLoader._load_all_software_params()` 把三层 YAML 按 `preset_name` 合并，得到 `ParamBundle.software_params[backend] = [preset_dict, ...]`。
+`input.json` 用 `"abacus": {"test": ["smear_lcao", "pw"]}` 指定 category（= 文件名）
+和其中的 preset 名；`parameters/abacus/test.yml` 里同名 preset 以**最后一次定义**为准
+（YAML 重复 key），所以同一文件内不要重复定义 preset 名。
 
-### 5.3 preset 字段含义（以 `abacus.yml` 为例）
+### 5.2 数据根（data root）：parameters/ 与 static/ 从哪来
+
+预设与站点表随**站点/项目**变，不随库代码变，所以运行时解析一个「数据根」——
+同时含 `parameters/` 和 `static/` 的目录（`utils/common.py:resolve_data_root`）：
+
+```
+--data-dir DIR / ConfigLoader(data_root=DIR)     ← 最高优先
+        ↓
+$AIIDA_URANIUM_DATA
+        ↓
+input.json 的祖先目录里最近的含 parameters/ 的那个
+        ↓
+包内 src/aiida_uranium_workflow/（冻结兜底快照）  ← 最低优先
+```
+
+要点：
+
+* **单一根**：命中哪个根，`parameters/` 与 `static/` 都从它读；半套（只有 parameters/
+  没有 static/）会**直接报错**，不会静默用包内那半套补齐。
+* **本机**：活跃数据根 = `aiida-uranium-scripts/`（`.../test/<method>/input.json` 的祖先）；
+  包内那份是冻结快照，**改它不生效**——解析器会在「包内文件比数据根新」时发 `UserWarning`。
+* `aiida-uranium check -i input.json` 第一行打印本次用的根与来源：
+  `data root: /path (source: cli | env:AIIDA_URANIUM_DATA | input-json:/path | package-default)`。
+* 结构注册表（`static/structure.yml`）走同一个根：数据根里加的结构，`static.structure`
+  立即可用。
+
+### 5.3 加载优先级（`utils/config.py:ConfigLoader`）
+
+```
+backend category (parameters/<code>/<category>.yml)   ← 由 input.json 指定
+              ↓
+protocol (parameters/<method>.yml)                    ← method 级共享协议
+```
+
+`ConfigLoader._load_all_software_params()` 按 `preset_name` 解析 backend YAML，
+得到 `ParamBundle.software_params[backend] = [preset_dict, ...]`；
+`_load_protocol()` 解析 method 级协议，交给该 method 的 `parser_hook`
+（smear → `parse_smear_protocol`）生成 `ParamBundle.workflow_data`。
+解析出的数据根记在 `ParamBundle.data_root`，orchestrator 复用它读结构表。
+
+### 5.4 preset 字段含义（以 `parameters/abacus/scf.yml` 为例）
 
 ```yaml
 test:
@@ -274,7 +312,7 @@ test:
 
 VASP preset 字段类似但 namespace 是 `parameters.incar` / `potential_family` / `potential_mapping` / `kpoints_spacing` / `kpoints_mesh`。
 
-### 5.4 `static/*.yml`
+### 5.5 `static/*.yml`
 
 * `static/structure.yml` —— 结构索引。`utils/structure.py` 通过 `pyxtal` 按 spacegroup + Wyckoff 位置生成 `StructureData`。
 * `static/metadata.yml` —— 计算 metadata 模板（`options.resources` / `queue_name` / `withmpi` / `max_wallclock_seconds`）。`build_structure_and_metadata()` 把它注入到 preset 的 `metadata.options` 字段。
@@ -322,7 +360,7 @@ src/aiida_uranium_workflow/
 │
 ├── parameters/                # 见 §5
 │
-├── static/                    # 见 §5.4
+├── static/                    # 见 §5.5
 │
 ├── utils/                     # 工具
 │   ├── cal_json.py            # build_cal_json + write_cal_json（output.json 写盘）
@@ -506,7 +544,7 @@ class SoftwareAdapter(ABC):
 
 | method | (网格 row × col) | 公共 helper |
 |---|---|---|
-| smear | (smear_method, sigma_eV) → workflow_data.smear_lists.smear / .sigma | `smear_inputs` 模式 |
+| smear | (smearing_method, smearing_sigma) → `workflow_data.smear_lists.<backend>`：abacus 读 `smearing_method_list`（ABACUS 关键字）/ `smearing_sigma_list`（Ry），vasp 读 `smear_list`（ISMEAR 整数）/ `sigma_list`（eV）；原样进 WorkChain 的同名端口 | 每后端原生关键字与单位，不做换算；旧共享布局（canonical 方法名 + eV）仍由 adapter 换算 |
 | convergence | (ecutwfc, kpoints) → workflow_data.convergence_lists.abacus.ecutwfc_list / .kpoints_distance_list（或 kpoints_mesh_list） | distance / spacing / mesh 三种模式 |
 | magmom | mag_value（单维）→ workflow_data.magmom_lists.abacus.mag_list | abacus 用嵌套 list，vasp 用 mapping dict |
 
@@ -778,14 +816,27 @@ AiiDA 把 40 个 child CalcJob 落盘后，目录里全是 `AbacusCalculation` �
 aiida-uranium = "aiida_uranium_workflow.cli.main:main"
 ```
 
-`cli/main.py:main()` 调 `build_unified_parser()` 拿 argparse → 4 个 subparser → dispatch：
+`cli/main.py:main()` 调 `build_unified_parser()` 拿 argparse → 各 subparser → dispatch：
 
 | subcommand | 函数 | 行数 |
 |---|---|---|
 | `run` | `_run(args)` | `main.py` |
+| `check` | `_check(args)` | `main.py` |
 | `report` | `_report(args)` | `main.py` |
 | `copy` | `_copy(args)` | `main.py` |
 | `archive` | `_archive(args)` | `main.py` |
+| `example` | `_example(args)` | `main.py` |
+| `plot` | `_plot(args)` | `main.py` |
+
+`run` 与 `check` 额外接受 `--data-dir DIR`（数据根覆盖，见 §5.2）；`check` 会打印本次解析到的
+数据根与来源。其它子命令不读 `parameters/`，因此不接受该选项：
+
+```bash
+aiida-uranium check -i aiida-uranium-scripts/test/smear/input.json
+#   workflow: smear | profile: aiida_profile
+#   data root: /…/bcc_uranium-v12/aiida-uranium-scripts (source: input-json:/…/aiida-uranium-scripts)
+aiida-uranium run -i input.json --data-dir /path/to/other-root
+```
 
 ### 13.2 `METHOD_SPECS` —— 单一真值源
 
@@ -1019,6 +1070,9 @@ pytest tests/ -m "not integration"
 | `test_report_energy_time.py` | 33 | smear / convergence / magmom 各自的 status / energy / wall_time 表 |
 | `test_parser_energy_time.py` | 12 | `fetch_abacus` / `fetch_vasp` / `parse_total_time` |
 | `test_labels.py` | 1 类 | format_*_label + resolve_label 大量子用例 |
+| `test_data_root.py` | 19 | 数据根解析优先级 / 向上查找 / 半套根报错 / 包内快照漂移告警 / ConfigLoader 端到端读临时根（不连 profile） |
+| `test_smear_protocol.py` | 15 | smear 协议解析（每后端原生 / 旧共享布局）+ 两个 adapter 的网格与端口名 |
+| `workflows/smear/test_sweep.py` | 2 | `AbacusSmearWorkChain` / `VaspSmearWorkChain` 的 (method, sigma) 扫描、子节点 label 与参数覆盖（stub，不连 profile） |
 | `test_convergence_schedulers.py` | 1 类 | ConvergenceWorkflowOrchestrator |
 | `test_cal_json.py` | 1 类 | build_cal_json + write_cal_json |
 | `test_copy_remote.py` | 1 类 | CopyPlan / CopyTarget 全流程 |
@@ -1026,23 +1080,33 @@ pytest tests/ -m "not integration"
 | `test_resolve_method.py` | 1 类 | METHOD_SPECS / get_method_spec / parse_method / resolve_method |
 | `test_run_cli.py` | 1 类 | run 端到端 |
 
-合计 **320 passed / 14 failed**（详见 §17）。
+合计 **706 passed / 28 failed / 8 errors**（2026-10-12 在 `-v12` 树里用 `PYTHONPATH=src pytest tests/` 实测；失败全部是 §17.1 的 pre-existing 组）。
 
 ---
 
 ## 17. 已知问题与故障排查
 
-### 17.1 已知 pre-existing 失败（不归本重构）
+### 17.1 已知 pre-existing 失败（不归本次改动）
 
-跑 `pytest tests/` 有 14 个测试 fail——**与本仓库所有提交无关**，是更早期遗留的损坏数据/签名不匹配：
+`PYTHONPATH=src pytest tests/` 实测 **706 passed / 28 failed / 8 errors**，失败集中在 4 个文件，
+成因都是 40c05d7「per-workflow preset 拆分」留下的**测试侧**残留——测试仍按旧布局去找 preset，
+与本次数据根改动无关（改动前后失败集合逐条一致，唯一差异见下）：
 
-| 测试 | 原因 | 修复方式 |
+| 测试文件 | 数量 | 原因 |
 |---|---|---|
-| `tests/test_structure_cli.py` 10 个 | `static/structure.yml` 的 `bcc-uranium` 条目 `x: [3.532]` 只有 1 个值（应当 = `lattice + N_wyckoff`，即 `1 + 1 = 2` 个）。`utils/structure.py:build_structure` 拒绝并 raise `ValueError` | 改 `x: [3.532, 0.0]`（a 位置坐标） 或回退至 `x: [3.45063]`（用 `bcc-uranium-0K` 的 a 值） |
-| `tests/workflows/convergence/test_{abacus,vasp}.py::test_parse_and_gather_convergence_results` 2 个 | 测试 fixture 期望 `parse_and_gather_convergence_results` 接受 `status_dict` 入参，但当前签名是 `**children` | 加 `status_dict` 入参（语义：收集所有 child 的 status） |
-| `tests/workflows/magmom/test_{abacus,vasp}.py::test_parse_and_gather_magmom_results` 2 个 | 同上，magmom 版 | 同上 |
+| `tests/test_config_loader.py` | 18 fail + 8 error | `tests/conftest.py` 仍在读已删除的 `parameters/abacus/abacus.yml`；`tests/test_config_loader.py::TestSubCategoryBackendSlot` 断言 `parameters/abacus/magmom.yml`（已并成 `temporary.yml`）；`example/*.json` 里还用旧字符串 category（`{"abacus": "test"}` → `parameters/abacus/abacus.yml`） |
+| `tests/test_pexsi_presets.py` | 4 | pexsi preset 字段随 `parameters/abacus/scf.yml` 调整而变 |
+| `tests/test_config_loader_validation.py` | 4 | static / preset 校验 fixture 与旧布局耦合 |
+| `tests/test_multi_structure.py` | 2 | `_validate_static` fixture 与旧布局耦合 |
 
-这些**不在本 README 描述的重构范围内**——前面所有 commit 都没碰过它们；切到 HEAD 738c75c 跑测试也是 7 failed（旧）+ 现在 14 failed（多出来的 7 个是 `test_structure_cli` 因为 `structure.yml` 早被改坏）。
+修复方向：把 `conftest.py` / `example/*.json` / 这些断言改成当前布局（`parameters/<backend>/<category>.yml`），
+或给它们一份自带的 fixture 数据根（见 §5.2）。另外注意：
+
+* `parameters/` 不随代码提交（§2.8），所以**与 preset 内容绑定的测试在不同机器上可能时通时败**——
+  例如 `TestSmearWorkflowAgainstNewLayout::test_smear_protocol_loaded_separately` 只在本地
+  `parameters/smear.yml` 的 `test_simple` 已是 per-backend 布局时通过。
+* editable 安装指向另一份 clone（`bcc_uranium`）时，必须 `PYTHONPATH=src` 或先
+  `pip install -e .`，否则跑的是旧代码（新增测试文件会因为 import 不到新符号而 collection error）。
 
 ### 17.2 `_REJECTED_GENERIC_CLASS_NAMES` 硬编码
 

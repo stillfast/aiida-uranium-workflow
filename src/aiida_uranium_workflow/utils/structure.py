@@ -1,8 +1,16 @@
-"""Structure builders for aiida-uranium-workflow."""
+"""Structure builders for aiida-uranium-workflow.
+
+The structure registry (``static/structure.yml``) lives in the **data
+root**, not necessarily in the installed package: it is resolved the same
+way the preset tables are (:func:`aiida_uranium_workflow.utils.common.resolve_data_root`).
+Every entry point here accepts an explicit ``static_dir`` / ``registry``
+so the orchestrator can pass the root it already resolved, and falls back
+to the packaged one otherwise.
+"""
 
 from __future__ import annotations
 
-from .common import STATIC_DIR
+from .common import STATIC_DIR, DataRoot, resolve_data_root
 from .yamlio import read_yaml
 from typing import Any
 from pathlib import Path
@@ -10,7 +18,28 @@ from pathlib import Path
 import argparse
 import sys
 
+#: Packaged fallback registry (see :func:`resolve_static_dir`).
 STRUCTURE_YML = STATIC_DIR / "structure.yml"
+
+
+def resolve_static_dir(static_dir: str | Path | None = None) -> Path:
+    """Return the ``static/`` directory to read tables from.
+
+    ``static_dir`` wins; otherwise the data root is resolved from
+    ``$AIIDA_URANIUM_DATA`` (there is no input JSON here, so the
+    project-root search does not apply) and its ``static/`` is used.
+    """
+    if static_dir is not None:
+        return Path(static_dir).expanduser().resolve()
+    return resolve_data_root(warn_on_fallback=False).static_dir
+
+
+def load_structure_registry(
+    static_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Read ``static/structure.yml`` from the resolved data root."""
+    path = resolve_static_dir(static_dir) / "structure.yml"
+    return read_yaml(path)
 
 
 def classify_structure_ref(ref: Any) -> tuple[str, Any]:
@@ -100,7 +129,12 @@ def structure_ref_label(ref: Any) -> str:
     return str(value)
 
 
-def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
+def build_structure(
+    atom_name: str,
+    *,
+    registry: dict[str, Any] | None = None,
+    static_dir: str | Path | None = None,
+):
     """Build an ASE Atoms object from a static entry via pyxtal.
 
     Returns
@@ -128,10 +162,13 @@ def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
     from pyxtal import pyxtal
 
     if registry is None:
-        registry = read_yaml(STRUCTURE_YML)
+        registry = load_structure_registry(static_dir)
 
     if atom_name not in registry:
-        raise KeyError(f"Structure '{atom_name}' not found in {STRUCTURE_YML}")
+        raise KeyError(
+            f"Structure '{atom_name}' not found in "
+            f"{resolve_static_dir(static_dir) / 'structure.yml'}"
+        )
     entry = registry[atom_name]
 
     spg = int(entry["spacegroup"])
@@ -174,6 +211,7 @@ def write_cif(
     output_dir: str | Path = ".",
     *,
     registry: dict[str, Any] | None = None,
+    static_dir: str | Path | None = None,
 ) -> Path:
     """Build ``atom_name`` and write it to ``<output_dir>/<safe_name>.cif``.
 
@@ -198,7 +236,7 @@ def write_cif(
     """
     import ase.io
 
-    atoms = build_structure(atom_name, registry=registry)
+    atoms = build_structure(atom_name, registry=registry, static_dir=static_dir)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_name = atom_name.replace("/", "__")
@@ -260,10 +298,12 @@ def main(argv: list[str] | None = None) -> int:
         python -m aiida_uranium_workflow.utils.structure --list
     """
     args = _build_arg_parser().parse_args(argv)
-    registry = read_yaml(STRUCTURE_YML)
+    static_dir = resolve_static_dir()
+    registry = read_yaml(static_dir / "structure.yml")
 
     if args.list_only:
         print("Available structures:")
+        print(f"  (registry: {static_dir / 'structure.yml'})")
         for name in registry:
             print(f"  - {name}")
         return 0
@@ -279,7 +319,12 @@ def main(argv: list[str] | None = None) -> int:
     written: list[Path] = []
     for name in args.names:
         try:
-            path = write_cif(name, output_dir=args.output_dir, registry=registry)
+            path = write_cif(
+                name,
+                output_dir=args.output_dir,
+                registry=registry,
+                static_dir=static_dir,
+            )
         except (KeyError, ValueError, NotImplementedError) as exc:
             print(f"[structure] error: {exc}", file=sys.stderr)
             return 1

@@ -50,9 +50,14 @@ def fake_execute(monkeypatch):
     calls: list[dict] = []
     return_value: list[SubmittedJob] = []
 
-    def _execute(*, input_json, profile, only):
+    def _execute(*, input_json, profile, only, data_root=None):
         calls.append(
-            {"input_json": input_json, "profile": profile, "only": only}
+            {
+                "input_json": input_json,
+                "profile": profile,
+                "only": only,
+                "data_root": data_root,
+            }
         )
         if return_value:
             return list(return_value)

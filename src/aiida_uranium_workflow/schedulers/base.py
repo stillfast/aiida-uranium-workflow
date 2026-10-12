@@ -295,8 +295,8 @@ class WorkflowOrchestrator:
         The user may pass either a single entry or a list of entries. Each
         entry is one of:
 
-        * a name in ``static/structure.yml`` (``"bcc-uranium"``) — built
-          on the fly with pyxtal;
+        * a name in the data root's ``static/structure.yml``
+          (``"bcc-uranium"``) — built on the fly with pyxtal;
         * a pk (``12345`` / ``"12345"`` / ``{"pk": 12345}``) or uuid
           (``{"uuid": "…"}``) of an already-stored ``StructureData`` —
           loaded from the profile as-is (imported structures, e.g. from
@@ -308,13 +308,24 @@ class WorkflowOrchestrator:
         """
         from aiida import orm
 
+        from aiida_uranium_workflow.utils.structure import load_structure_registry
+
+        # ``bundle.data_root`` is the root ConfigLoader read the presets
+        # from; the structure registry is read from the same root (a
+        # hand-built bundle without one falls back to the packaged file).
+        root = getattr(self.bundle, "data_root", None)
+        static_dir = root.static_dir if root is not None else None
+        registry = load_structure_registry(static_dir)
+
         structures = []
         for ref in self._structure_refs():
             node = load_structure_node(ref)
             structures.append(
                 node
                 if node is not None
-                else orm.StructureData(ase=build_structure(ref))
+                else orm.StructureData(
+                    ase=build_structure(ref, registry=registry, static_dir=static_dir)
+                )
             )
         return structures
 

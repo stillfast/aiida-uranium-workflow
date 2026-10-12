@@ -323,6 +323,7 @@ def execute_workflow(
     input_json: str,
     profile: str | None,
     only: str | None,
+    data_root: str | None = None,
 ) -> list:
     """Run the orchestrator that matches ``input_json``'s workflow.
 
@@ -331,17 +332,42 @@ def execute_workflow(
     both the integer pk and the WorkChain UUID string (the canonical
     identifier written into ``output.json``).
 
+    ``data_root`` overrides the resolved data root (``--data-dir``); when
+    ``None`` the root is resolved from ``$AIIDA_URANIUM_DATA`` / the input
+    JSON's ancestors / the packaged fallback.
+
     Raises ``FileNotFoundError`` / ``ValueError`` (from
     :class:`ConfigLoader`) on bad input — the CLI is expected to let
     those propagate.
     """
-    bundle = ConfigLoader(input_json).load_all()
+    bundle = ConfigLoader(input_json, data_root=data_root).load_all()
     if profile:
         bundle.input_params["profile"] = profile
 
     backends = (only,) if only else None
     orchestrator = get_orchestrator(bundle, backends=backends)
     return orchestrator.run_with_jobs()
+
+
+def add_data_dir_argument(parser) -> None:
+    """Add the shared ``--data-dir`` option to a sub-parser.
+
+    The option names the directory holding ``parameters/`` and ``static/``
+    (the "data root").  Omitting it keeps the default resolution order:
+    ``$AIIDA_URANIUM_DATA`` → nearest ancestor of the input JSON carrying
+    a ``parameters/`` directory → packaged fallback snapshot.
+    """
+    parser.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory holding parameters/ and static/ (the data root). "
+            "Overrides $AIIDA_URANIUM_DATA and the search next to the "
+            "input JSON."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +655,7 @@ def build_unified_parser(
             "Default: <input_dir>/output.json."
         ),
     )
+    add_data_dir_argument(run_p)
 
     # report --------------------------------------------------------------
     report_p = sub.add_parser(
@@ -842,6 +869,7 @@ def build_unified_parser(
             "families / structures to be installed)."
         ),
     )
+    add_data_dir_argument(check_p)
 
     # example -------------------------------------------------------------
     example_p = sub.add_parser(

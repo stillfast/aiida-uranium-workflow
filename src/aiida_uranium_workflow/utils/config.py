@@ -10,7 +10,7 @@ The workflow-specific logic is delegated to the registry in
 
 from __future__ import annotations
 
-from .common import ParamBundle, PARAMETERS_DIR, PROTOCOL_DIR, STATIC_DIR
+from .common import DataRoot, ParamBundle, resolve_data_root
 from .yamlio import read_json, read_yaml
 from pathlib import Path
 from typing import Any
@@ -25,24 +25,50 @@ class ConfigLoader:
 
     The loader uses the workflow registry to discover which protocol YAML
     to load based on ``input.json["workflow"]``.
+
+    Every table (protocol, backend presets, ``static/metadata.yml``) is
+    read from **one data root**, resolved by
+    :func:`aiida_uranium_workflow.utils.common.resolve_data_root`:
+    ``data_root=`` argument → ``$AIIDA_URANIUM_DATA`` → nearest ancestor of
+    the input JSON carrying ``parameters/`` → the packaged fallback.  The
+    resolved ``DataRoot`` lands in ``bundle.data_root`` so callers (CLI,
+    orchestrator) can report and reuse it.
     """
 
     REQUIRED_KEYS = ("workflow", "parameters", "static", "profile", "code")
 
-    #: Backend keys that map to a ``parameters/<backend>/<backend>.yml``
-    #: directory. Anything else appearing under ``parameters`` in
+    #: Backend keys that map to a ``parameters/<backend>/<category>.yml``
+    #: file. Anything else appearing under ``parameters`` in
     #: ``input.json`` (e.g. ``"smear"``, ``"magmom"``, ``"convergence"``)
     #: is treated as a workflow-protocol slot and handled by
     #: :meth:`_load_protocol` instead.
     BACKEND_DIRS = ("abacus", "vasp", "fleur", "qe")
 
-    def __init__(self, input_json_path: str | Path) -> None:
+    def __init__(
+        self,
+        input_json_path: str | Path,
+        data_root: str | Path | None = None,
+    ) -> None:
         self.input_json_path = input_json_path
+        self._data_root_override = data_root
+        #: Filled by :meth:`load_all` (also used by :attr:`data_root`).
+        self._resolved_root: DataRoot | None = None
         self.input_params: dict[str, Any] = read_json(input_json_path)
+
+    @property
+    def data_root(self) -> DataRoot:
+        """The data root this loader reads from (resolved by ``load_all``)."""
+        if self._resolved_root is None:
+            self._resolved_root = resolve_data_root(
+                self._data_root_override, self.input_json_path
+            )
+        return self._resolved_root
 
     def load_all(self) -> ParamBundle:
         """Populate every section of the bundle. Returns the bundle."""
         self._validate()
+
+        root = self.data_root
 
         # Get workflow-specific info from registry
         from aiida_uranium_workflow.schedulers import get_workflow_entry
@@ -63,7 +89,7 @@ class ConfigLoader:
             if not preset_entries:
                 raise KeyError(
                     f"None of the requested protocol presets {list(raw_wf)!r} "
-                    f"exist in parameters/{entry.protocol_file}; check the "
+                    f"exist in {root.protocol_dir / entry.protocol_file}; check the "
                     f"'parameters' section of {self.input_json_path}."
                 )
             workflow_presets = [name for name, _ in preset_entries]
@@ -92,8 +118,8 @@ class ConfigLoader:
             raise KeyError(
                 f"Protocol '{name}' not found for workflow "
                 f"'{self.input_params['workflow']}' and no backend preset "
-                f"was requested; check parameters/ and the 'parameters' "
-                f"section of {self.input_json_path}."
+                f"was requested; check {root.protocol_dir} and the "
+                f"'parameters' section of {self.input_json_path}."
             )
 
         return ParamBundle(
@@ -105,6 +131,7 @@ class ConfigLoader:
             metadata=metadata,
             workflow_presets=workflow_presets,
             workflow_data_map=workflow_data_map,
+            data_root=root,
         )
 
     def _validate(self) -> None:
@@ -200,7 +227,7 @@ class ConfigLoader:
         if entry.protocol_file is None:
             return []
         names = self._protocol_names(entry)
-        protocol_path = PROTOCOL_DIR / entry.protocol_file
+        protocol_path = self.data_root.protocol_dir / entry.protocol_file
         if not protocol_path.is_file():
             return []
         table = read_yaml(protocol_path)
@@ -279,7 +306,7 @@ class ConfigLoader:
                             f"non-empty strings, got {category!r}"
                         )
                     table = read_yaml(
-                        PARAMETERS_DIR / backend / f"{category}.yml"
+                        self.data_root.parameters_dir / backend / f"{category}.yml"
                     )
                     preset_names = self._coerce_preset_names(
                         backend, category, category_value
@@ -300,7 +327,9 @@ class ConfigLoader:
             if not preset_names:
                 continue
 
-            table = read_yaml(PARAMETERS_DIR / backend / f"{backend}.yml")
+            table = read_yaml(
+                self.data_root.parameters_dir / backend / f"{backend}.yml"
+            )
             out[backend] = self._resolve_presets(
                 backend,
                 table,
@@ -371,9 +400,13 @@ class ConfigLoader:
         return presets
 
     def _load_metadata(self) -> dict[str, Any]:
-        """Load metadata from static YAML."""
+        """Load metadata from the data root's ``static/metadata.yml``."""
         name = self.input_params["static"]["metadata"]
-        table = read_yaml(STATIC_DIR / "metadata.yml")
+        metadata_path = self.data_root.static_dir / "metadata.yml"
+        table = read_yaml(metadata_path)
         if name not in table:
-            raise KeyError(f"Metadata '{name}' not found in metadata.yml")
+            raise KeyError(
+                f"Metadata '{name}' not found in {metadata_path}; "
+                f"available: {list(table)}"
+            )
         return table[name]

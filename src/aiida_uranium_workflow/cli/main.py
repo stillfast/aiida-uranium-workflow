@@ -90,6 +90,7 @@ def _run(args) -> int:
         input_json=args.input_json,
         profile=args.profile,
         only=args.only,
+        data_root=args.data_dir,
     )
 
     if not submitted:
@@ -528,7 +529,7 @@ def _check_input_json(args, input_path) -> int:
     from aiida_uranium_workflow.utils.config import ConfigLoader
 
     try:
-        bundle = ConfigLoader(input_path).load_all()
+        bundle = ConfigLoader(input_path, data_root=getattr(args, "data_dir", None)).load_all()
     except Exception as exc:  # noqa: BLE001 — surface any validation failure
         print(f"[check] invalid input: {exc}", file=sys.stderr)
         return 1
@@ -537,6 +538,11 @@ def _check_input_json(args, input_path) -> int:
     workflow = ip.get("workflow", "?")
     profile = args.profile or ip.get("profile", "?")
     print(f"workflow: {workflow} | profile: {profile}")
+    # Which parameters/ + static/ are in play is the first thing to know
+    # when a preset looks wrong — the data root is not necessarily the
+    # installed package (see utils/common.resolve_data_root).
+    if bundle.data_root is not None:
+        print(f"data root: {bundle.data_root.describe()}")
     static = ip.get("static", {})
     structures = static.get("structure", "?")
     metadata = static.get("metadata", "?")

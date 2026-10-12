@@ -109,17 +109,18 @@ aiida_uranium_workflow/
 │   └── <method>/<backend>.py          (_workchain_entry_point, _build_workchain_inputs)
 ├── schedulers/       WorkflowOrchestrator + register_workflow() registry
 │   └── <method>.py                    (ADAPTERS / BACKENDS / PRESET_SUBKEYS)
-├── parameters/       per-method, per-backend preset YAML
+├── parameters/       frozen fallback copy of the preset YAML (see below)
 │   ├── <method>.yml                   top-level protocol blocks
-│   └── <backend>/<subkey>.yml         shared SCF base (scf.yml), magmom, …
+│   └── <backend>/<category>.yml       scf.yml / test.yml / temporary.yml
 ├── utils/
 │   ├── config.py     ConfigLoader (presets, no silent fallback)
+│   ├── common.py     data-root resolution (parameters/ + static/)
 │   ├── plot/         extract.py (backend-agnostic BandData/DosData),
 │   │                 compare.py (η_v / max η / ω), plot.py, phonon.py
 │   ├── report/       Markdown report generators per method
 │   └── elastic.py    pymatgen-based deformation / fitting (stress & energy)
-├── cli/              aiida-uranium {run,report,archive,copy} + plot CLIs
-└── static/           structure / metadata presets
+├── cli/              aiida-uranium {run,check,report,archive,copy} + plot CLIs
+└── static/           frozen fallback copy of the site tables
 ```
 
 Key conventions (see `AGENT.md` for the full spec):
@@ -128,6 +129,20 @@ Key conventions (see `AGENT.md` for the full spec):
   `abacus.*` / `vasp.*` / `fleur.*` (those belong to the plugins).
 * **Single source of truth for parameters** — presets are read from
   `parameters/`, missing presets raise instead of silently falling back.
+* **Data root** — the preset tables (`parameters/`) and the site tables
+  (`static/`: queues, wall-times, structures) are resolved as a pair:
+
+  ```
+  --data-dir DIR  →  $AIIDA_URANIUM_DATA  →  nearest ancestor of input.json
+     that carries parameters/  →  the copy shipped in the package (frozen)
+  ```
+
+  Put your own `parameters/` + `static/` next to your `input.json`s (e.g. in
+  a scripts repository) and they are picked up automatically; the packaged
+  copy is only a fallback for inputs without a data root of their own.
+  `aiida-uranium check -i input.json` prints the root it used, and warns
+  when a *packaged* table is newer than the active one — the signature of
+  having edited the wrong copy.
 * **Adding a method** = one WorkChain (optional), one adapter per backend,
   one scheduler (self-registering), one report generator, one `MethodSpec`
   entry in `cli/_common.py`.

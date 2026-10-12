@@ -2,7 +2,15 @@
 
 Mirrors the file layout of ``aiida_abacus.workflows.base``:
 
-* :class:`AbacusSmearWorkChain` — sweeps over ``(smearing_method, sigma)``
+* :class:`AbacusSmearWorkChain` — sweeps over
+  ``(smearing_method, smearing_sigma)``
+
+The sweep grid arrives through two list inputs named after the ABACUS
+keywords they drive — and after the matching keys of the protocol
+section in ``parameters/smear.yml``::
+
+    smearing_method_list    # ABACUS smearing_method keywords
+    smearing_sigma_list     # the unit is Ry
 
 The actual AiiDA ``inputs`` dict is assembled by
 :class:`aiida_uranium_workflow.input_builders.AbacusAdapter`.
@@ -10,7 +18,7 @@ The actual AiiDA ``inputs`` dict is assembled by
 Note
 ----
 The abacus WorkChain is registered under the entry-point
-``abacus.smear``.  Falling back to the plugin-provided
+``uranium.smear.abacus``.  Falling back to the plugin-provided
 ``AbacusBaseWorkChain`` allows the workflow to be submitted before the
 full ``*SmearWorkChain`` class is published as an entry point.
 
@@ -42,10 +50,10 @@ ChildWorkChain = WorkflowFactory("abacus.base")
 
 
 class AbacusSmearWorkChain(WorkChain):
-    """Sweep over ``(smearing_method, sigma)`` combinations and gather the
-    electronic entropy.
+    """Sweep over ``(smearing_method, smearing_sigma)`` combinations and gather
+    the electronic entropy.
 
-    Outline:  submit_children → check_children → gather_results
+    Outline:  submit_children → gather_results
 
     Exit codes
     ----------
@@ -74,14 +82,15 @@ class AbacusSmearWorkChain(WorkChain):
         )
 
         spec.input(
-            "smear",
+            "smearing_method_list",
             valid_type=orm.List,
-            help="List of ABACUS smearing-method keywords.",
+            help="List of ABACUS ``smearing_method`` keywords "
+            "(gauss / mp / mp2 / mv / fd).",
         )
         spec.input(
-            "sigma",
+            "smearing_sigma_list",
             valid_type=orm.List,
-            help="List of smearing sigma values in Rydberg.",
+            help="List of ABACUS ``smearing_sigma`` values in Ry.",
         )
         spec.input("metadata.dry_run", valid_type=bool, required=False, non_db=True)
         spec.output("output_parameters", valid_type=orm.Dict, required=True)
@@ -107,9 +116,9 @@ class AbacusSmearWorkChain(WorkChain):
             return False
 
     def submit_children(self):
-        """Submit one child WorkChain per (smearing_method, sigma) pair."""
-        smear_list = self.inputs.smear.get_list()
-        sigma_list = self.inputs.sigma.get_list()
+        """Submit one child WorkChain per ``(smearing_method, sigma)`` pair."""
+        smear_list = self.inputs.smearing_method_list.get_list()
+        sigma_list = self.inputs.smearing_sigma_list.get_list()
 
         planned = list(product(smear_list, sigma_list))
         self.ctx.smear_pairs = planned
@@ -177,8 +186,8 @@ class AbacusSmearWorkChain(WorkChain):
             self.out("output_parameters", output)
             return
 
-        smear_list = self.inputs.smear.get_list()
-        sigma_list = self.inputs.sigma.get_list()
+        smear_list = self.inputs.smearing_method_list.get_list()
+        sigma_list = self.inputs.smearing_sigma_list.get_list()
 
         all_finished_ok = True
         child_pks = []

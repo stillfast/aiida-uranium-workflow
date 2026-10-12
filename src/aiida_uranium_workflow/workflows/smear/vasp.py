@@ -12,7 +12,16 @@ ChildWorkChain = WorkflowFactory("vasp.v2.vasp")
 
 
 class VaspSmearWorkChain(WorkChain):
-    """Sweep over ``(ismear, sigma)`` combinations and gather the electronic entropy."""
+    """Sweep over ``(ismear, sigma)`` combinations and gather the electronic
+    entropy.
+
+    The sweep grid arrives through two list inputs named after the INCAR
+    tags they drive — and after the matching keys of the protocol section
+    in ``parameters/smear.yml``::
+
+        smear_list    # ISMEAR integers
+        sigma_list    # the unit is eV
+    """
 
     @classmethod
     def define(cls, spec):
@@ -32,10 +41,14 @@ class VaspSmearWorkChain(WorkChain):
             ],
         )
         spec.input(
-            "smear", valid_type=orm.List, help="List of ISMEAR integers for VASP."
+            "smear_list",
+            valid_type=orm.List,
+            help="List of ISMEAR integers for VASP.",
         )
         spec.input(
-            "sigma", valid_type=orm.List, help="List of sigma values (in eV) for VASP."
+            "sigma_list",
+            valid_type=orm.List,
+            help="List of sigma values (in eV) for VASP.",
         )
         spec.output("output_parameters", valid_type=orm.Dict, required=True)
 
@@ -52,18 +65,13 @@ class VaspSmearWorkChain(WorkChain):
 
     def submit_children(self):
         """Submit one VASP run for every (ismear, sigma) pair."""
-        smear_list = self.inputs.smear.get_list()
-        sigma_list = self.inputs.sigma.get_list()
+        smear_list = self.inputs.smear_list.get_list()
+        sigma_list = self.inputs.sigma_list.get_list()
 
         planned = list(product(smear_list, sigma_list))
         self.ctx.smear_pairs = planned
 
         base_inputs = self.exposed_inputs(ChildWorkChain, agglomerate=True)
-        base_calc_meta = getattr(base_inputs.get("calc", {}), "metadata", {})
-        if hasattr(base_calc_meta, "get_dict"):
-            base_calc_meta = base_calc_meta.get_dict()
-        elif not isinstance(base_calc_meta, dict):
-            base_calc_meta = {}
 
         for smear, sigma in planned:
             label = format_smear_label(smear, sigma)
@@ -89,9 +97,10 @@ class VaspSmearWorkChain(WorkChain):
             self.to_context(**{label: running})
 
     def gather_results(self):
+        """Collect every child's pk and write the gathered ``output_parameters``."""
 
-        smear_list = self.inputs.smear.get_list()
-        sigma_list = self.inputs.sigma.get_list()
+        smear_list = self.inputs.smear_list.get_list()
+        sigma_list = self.inputs.sigma_list.get_list()
 
         all_finished_ok = True
         child_pks = []

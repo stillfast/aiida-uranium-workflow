@@ -28,6 +28,19 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
    塞进 `orm.List`（会扁平化并触发 "truth value of an array" 校验错误）。
 6. **对称与可复现**：比较/拟合指标对参数交换对称（A↔B 结果不变）；随机性只允许出现在
    明确标注处。
+7. **数据根（data root）机制**：`parameters/` 与 `static/` 不在代码里硬编码，运行时解析
+   「数据根」——一个同时含 `parameters/` 和 `static/` 的目录。优先级：
+   `--data-dir DIR` / `ConfigLoader(data_root=)` → `$AIIDA_URANIUM_DATA` →
+   从 input.json 向上找最近的含 `parameters/` 的目录 → 包内兜底。
+   **本机活跃数据根是 `aiida-uranium-scripts/`**（`.../test/<method>/input.json` 的祖先），
+   包内 `src/aiida_uranium_workflow/{parameters,static}` 只作**兜底快照**（不在活跃路径上）：
+   **改参数请改数据根那份**，改包内那份不生效（解析器会在包内文件比数据根新时告警）。
+   实现见 `utils/common.py:resolve_data_root` / `snapshot_drift`。
+8. **`parameters/` 不同步到远端仓库**：数据根里的 preset、`static/*.yml`（队列名、结构表）
+   **不纳入 git 提交/推送**——本地改动原样留在开发机上，**除非用户当次明确说明要同步**。
+   代码与文档（`workflows/`、`input_builders/`、`schedulers/`、`utils/`、`cli/`、`tests/`、
+   `docs/`、`AGENT.md`）照常提交。提交前用 `git status` 逐项确认，**不要**用
+   `git commit -a` / `git add -A` / `git add .`，只用显式路径 `git add <file>`。
 
 ## 3. 目录结构与职责
 
@@ -37,8 +50,9 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
 | `input_builders/<method>/<backend>.py` | `SoftwareAdapter` 子类：preset YAML → AiiDA inputs dict | `_workchain_entry_point()` 返回 `uranium.<method>.<backend>`（或插件入口）；`_build_workchain_inputs` / `_prepare_workflow_inputs` / `adapt` |
 | `schedulers/<method>.py` | `WorkflowOrchestrator` 子类 + `register_workflow()` 自注册 | 定义 `ADAPTERS` / `BACKENDS` / `PRESET_SUBKEYS` |
 | `schedulers/__init__.py` | import 触发自注册 | 新方法必须在此加 import |
-| `parameters/<method>.yml` | 方法级协议（顶层 per-backend 块） | 与 `PRESET_SUBKEYS` 对应 |
-| `parameters/<backend>/<subkey>.yml` | 共享后端参数（如 `scf.yml`、`magmom.yml`） | 跨方法复用，不重复定义 |
+| `parameters/<method>.yml` | 方法级协议（顶层 per-backend 块） | 与 `PRESET_SUBKEYS` 对应；从**数据根**读取 |
+| `parameters/<backend>/<category>.yml` | 后端参数（`scf.yml` / `test.yml` / `temporary.yml`） | category 由 input.json 的 dict key 指定；跨方法复用 |
+| `static/metadata.yml`、`static/structure.yml` | 站点表（队列/墙钟/结构注册表） | 与 `parameters/` 同属数据根，一起搬家 |
 | `utils/` | config / plot / report / elastic / 结构等纯函数 | 无 AiiDA import（config 除外可 lazy） |
 | `cli/_common.py` | `METHOD_SPECS` 驱动统一 CLI | 新方法必须加 `MethodSpec` |
 | `pyproject.toml` | 打包 + entry points | 与代码引用保持一致 |
@@ -55,14 +69,21 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
 
 ## 5. 参数体系规范
 
-- 布局：`parameters/<method>.yml` 放方法专属协议；共享的 SCF/基础参数放
-  `parameters/<backend>/scf.yml` 等，被多方法引用。
+- **数据根**：`parameters/` 与 `static/` 成对出现在一个「数据根」里，路径运行时解析
+  （见 §2.7）。本机数据根 = `aiida-uranium-scripts/`；包里那份是冻结快照。
+  **编辑参数 → 改数据根**；`aiida-uranium check -i …` 第一行会打印本次用的数据根与来源。
+- 布局：`parameters/<method>.yml` 放方法专属协议；后端 preset 放
+  `parameters/<backend>/<category>.yml`（`category` = input.json 里的 dict key），被多方法引用。
 - preset 语义：preset 名（`test` / `test_soc` / `pw_r` / `lcao_r` / `nosoc` / `soc` …）
   在文件内注释说明；**新增 preset 必须写注释**（物理含义、适用场景）。
+  **同一文件内不要重复定义 preset 名**（YAML 取最后一次，前面的静默失效）。
 - 修改参数：先 grep 所有引用方（`input_builders/`、`schedulers/`、测试），确认语义后再改；
   删除 preset 前确认没有调用方依赖。
 - 只由顶层控制：input.json 指定的 preset 是唯一来源；不实现"预设不存在就 fallback 到别的
   preset"的逻辑。
+- **同步纪律**：数据根里的 preset 与 `static/*.yml` 只留在本地（见 §2.8），不随代码一起
+  提交/推送；需要同步时必须由用户当次明确说明。生成/修改参数的脚本、报告可以提交，
+  参数本身不提交。
 
 ## 6. 如何添加一个新方法（检查清单）
 
@@ -112,8 +133,15 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
 
 - AiiDA profile：`aiida_profile`（PostgreSQL `aiida_db`，disk-object-store
   `/home/liguozhou/data/aiida_profile/profile`）。
-- 沙箱限制：`~/.aiida` 与 `/home/liguozhou/data` 只读——**不要直接跑依赖 profile 的 CLI /
-  daemon 命令**；验证数据时用 psql 查 `db_dbnode`/属性 + 读仓库 loose 对象，或在脚本里
-  monkeypatch `AiiDAConfigPathResolver.access_control_dir` 到可写 tmp 目录。
+- 数据根：`/home/liguozhou/abacus/calculations/bcc_uranium-v12/aiida-uranium-scripts`
+  （含 `parameters/` + `static/`，私有、不进 git）。input.json 放在它下面时自动命中；
+  从别处跑就给 `--data-dir` 或 `AIIDA_URANIUM_DATA`。
+- editable 安装指向 `bcc_uranium`（v11）那份 clone：在 `-v12` 目录里跑 CLI / pytest 需要
+  `PYTHONPATH=src`（或对 v12 做 `pip install -e .`）。
+- 沙箱限制由**当前会话**的策略决定（可能是 `workspace-write`，也可能放宽到
+  `danger-full-access`）：`workspace-write` 下 `~/.aiida` 与 `/home/liguozhou/data` 只读，
+  跑不了依赖 profile 的 CLI / daemon 命令——此时验证数据用 psql 查
+  `db_dbnode`/属性 + 读仓库 loose 对象，或把 `AiiDAConfigPathResolver.access_control_dir`
+  monkeypatch 到可写 tmp 目录。
 - 参考数据：`aiida-uranium-scripts/banddos/nosoc/band.json`（pks：abacus
   `2843fc22`/`89c921e8`、fleur `a91c3e15`）可用于 band-compare 演示。

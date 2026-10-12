@@ -56,7 +56,6 @@ from aiida_uranium_workflow.utils.copy_remote import (
     load_copy_plan,
 )
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -91,6 +90,7 @@ def _run(args) -> int:
         input_json=args.input_json,
         profile=args.profile,
         only=args.only,
+        data_root=args.data_dir,
     )
 
     if not submitted:
@@ -529,7 +529,7 @@ def _check_input_json(args, input_path) -> int:
     from aiida_uranium_workflow.utils.config import ConfigLoader
 
     try:
-        bundle = ConfigLoader(input_path).load_all()
+        bundle = ConfigLoader(input_path, data_root=getattr(args, "data_dir", None)).load_all()
     except Exception as exc:  # noqa: BLE001 — surface any validation failure
         print(f"[check] invalid input: {exc}", file=sys.stderr)
         return 1
@@ -538,6 +538,11 @@ def _check_input_json(args, input_path) -> int:
     workflow = ip.get("workflow", "?")
     profile = args.profile or ip.get("profile", "?")
     print(f"workflow: {workflow} | profile: {profile}")
+    # Which parameters/ + static/ are in play is the first thing to know
+    # when a preset looks wrong — the data root is not necessarily the
+    # installed package (see utils/common.resolve_data_root).
+    if bundle.data_root is not None:
+        print(f"data root: {bundle.data_root.describe()}")
     static = ip.get("static", {})
     structures = static.get("structure", "?")
     metadata = static.get("metadata", "?")
@@ -738,44 +743,10 @@ _DISPATCH = {
 }
 
 
-def _configure_root(args) -> None:
-    """Resolve this run's ``parameters/`` + ``static/`` root and report it.
-
-    Order: ``--config-root`` → ``$AIIDA_URANIUM_CONFIG_ROOT`` → the nearest
-    scripts tree above the ``input.json`` (then the CWD) → the package.
-    The resolved location is printed because silently using the package
-    copies when a scripts tree's parameters were intended is exactly the
-    accident this feature exists to prevent.
-    """
-    from aiida_uranium_workflow.utils.common import (
-        CONFIG_ROOT_ENV,
-        config_root_label,
-        find_config_root,
-        set_config_root,
-    )
-
-    explicit = getattr(args, "config_root", None)
-    if explicit:
-        set_config_root(explicit, source="--config-root")
-    elif os.environ.get(CONFIG_ROOT_ENV):
-        set_config_root(None)  # honours the environment variable
-    else:
-        start = getattr(args, "input_json", None) or os.getcwd()
-        found = find_config_root(start)
-        if found is not None:
-            set_config_root(found, source=f"found above {Path(start).name or start}")
-        else:
-            set_config_root(None)
-
-    print(f"[config] parameters/static ← {config_root_label()}")
-
-
 def main(argv: list[str] | None = None) -> int:
     """Entry point registered as the ``aiida-uranium`` console script."""
     parser = build_unified_parser()
     args = parser.parse_args(argv)
-    if args.command in ("run", "report", "check", "example"):
-        _configure_root(args)
     return _DISPATCH[args.command](args)
 
 

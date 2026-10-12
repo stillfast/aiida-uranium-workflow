@@ -35,7 +35,9 @@ AiiDA 工作流编排库：用统一 JSON 驱动 ABACUS / VASP / FLEUR 上的 DF
    **本机活跃数据根是 `aiida-uranium-scripts/`**（`.../test/<method>/input.json` 的祖先），
    包内 `src/aiida_uranium_workflow/{parameters,static}` 只作**参考 / 测试用例**（顺带在
    找不到数据根时兜底，不在活跃路径上）：**改参数请改数据根那份**，改包内那份不生效
-   （解析器会在包内文件比数据根新时告警，见 `snapshot_drift`）。
+   （`snapshot_drift()` 可以显式比较两者，但运行路径**不**再因此告警：
+   包内那份会被 git 操作刷新 mtime，且像 `aiida-uranium-scripts-v14` 这种故意分叉的树
+   本来就与包内不同，告警会变成噪声）。
    实现见 `utils/common.py:resolve_data_root` / `snapshot_drift`。
 8. **`parameters/` 不同步到远端仓库**：数据根里的 preset、`static/*.yml`（队列名、结构表）
    **不纳入 git 提交/推送**——本地改动原样留在开发机上，**除非用户当次明确说明要同步**。

@@ -219,9 +219,17 @@ class TestSnapshotDrift:
         assert "parameters/smear.yml" in drift["only_in_root"]
         assert drift["newer_in_packaged"] == []
 
-    def test_warning_when_packaged_copy_is_newer_than_active_root(
-        self, tmp_path, monkeypatch
+    def test_no_warning_even_when_the_packaged_copy_is_newer(
+        self, tmp_path, monkeypatch, recwarn
     ):
+        """The run path deliberately does *not* warn about snapshot drift.
+
+        The packaged copy is expected to move ahead of a project data root
+        (git checkout / merge refresh its mtimes, and a tree such as
+        ``aiida-uranium-scripts-v14`` is a deliberate fork of it), so the
+        warning fired on every run and was pure noise.  The information is
+        still available on request through :func:`snapshot_drift`.
+        """
         import shutil
 
         active = _write_project_root(tmp_path / "scripts")
@@ -232,9 +240,13 @@ class TestSnapshotDrift:
         os.utime(packaged / self.SHARED, (3_000_000_000, 3_000_000_000))
         monkeypatch.setattr(common_module, "DEFAULT_DATA_ROOT", packaged)
 
-        with pytest.warns(UserWarning, match="NEWER than the active data root"):
-            root = resolve_data_root(active)
+        root = resolve_data_root(active)
         assert root.path == active.resolve()
+        assert [str(w.message) for w in recwarn] == []  # no chatter
+        # …while the drift itself is still detectable when asked for.
+        assert snapshot_drift(active, packaged=packaged)["newer_in_packaged"] == [
+            self.SHARED
+        ]
 
     def test_no_warning_when_the_active_root_is_the_newest(
         self, tmp_path, monkeypatch, recwarn

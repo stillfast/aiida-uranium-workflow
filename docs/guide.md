@@ -1070,7 +1070,7 @@ pytest tests/ -m "not integration"
 | `test_report_energy_time.py` | 33 | smear / convergence / magmom 各自的 status / energy / wall_time 表 |
 | `test_parser_energy_time.py` | 12 | `fetch_abacus` / `fetch_vasp` / `parse_total_time` |
 | `test_labels.py` | 1 类 | format_*_label + resolve_label 大量子用例 |
-| `test_data_root.py` | 19 | 数据根解析优先级 / 向上查找 / 半套根报错 / 包内快照漂移告警 / ConfigLoader 端到端读临时根（不连 profile） |
+| `test_data_root.py` | 19 | 数据根解析优先级 / 向上查找 / 半套根报错 / 包内快照漂移检测（`snapshot_drift`，不在运行路径上）/ ConfigLoader 端到端读临时根（不连 profile） |
 | `test_smear_protocol.py` | 15 | smear 协议解析（每后端原生 / 旧共享布局）+ 两个 adapter 的网格与端口名 |
 | `workflows/smear/test_sweep.py` | 2 | `AbacusSmearWorkChain` / `VaspSmearWorkChain` 的 (method, sigma) 扫描、子节点 label 与参数覆盖（stub，不连 profile） |
 | `test_convergence_schedulers.py` | 1 类 | ConvergenceWorkflowOrchestrator |

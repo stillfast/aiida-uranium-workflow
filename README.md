@@ -142,9 +142,11 @@ Key conventions (see `AGENT.md` for the full spec):
   copy is the **reference / test fixture** (it also serves as the fallback
   for inputs that have no data root of their own) — edit the data root, not
   the package.
-  `aiida-uranium check -i input.json` prints the root it used, and warns
-  when a *packaged* table is newer than the active one — the signature of
-  having edited the wrong copy.
+  `aiida-uranium check -i input.json` prints the root it used; a run that
+  finds no data root at all falls back to the packaged copy and says so.
+  (`utils.common.snapshot_drift()` can compare the two explicitly, but the
+  run path does not warn about it — the packaged copy is expected to move
+  on, and a deliberately forked tree differs from it by design.)
 * **Adding a method** = one WorkChain (optional), one adapter per backend,
   one scheduler (self-registering), one report generator, one `MethodSpec`
   entry in `cli/_common.py`.

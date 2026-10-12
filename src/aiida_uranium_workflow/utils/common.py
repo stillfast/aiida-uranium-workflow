@@ -256,18 +256,11 @@ def resolve_data_root(
             f"next to '{PARAMETERS_SUBDIR}/', or point --data-dir at a complete root."
         )
 
-    if warn_on_fallback and resolved.path.resolve() != DEFAULT_DATA_ROOT.resolve():
-        newer = snapshot_drift(resolved)["newer_in_packaged"]
-        if newer:
-            preview = ", ".join(newer[:3]) + (" …" if len(newer) > 3 else "")
-            warnings.warn(
-                f"{len(newer)} packaged preset file(s) are NEWER than the active "
-                f"data root {resolved.path} ({preview}). Edits made in the "
-                f"package copy have no effect — edit "
-                f"{resolved.path}/{'parameters'} instead.",
-                stacklevel=2,
-            )
-
+    # NOTE: the packaged snapshot is *expected* to move ahead of a project
+    # data root (git checkout / merge refresh its mtimes, and a tree like
+    # aiida-uranium-scripts-v14 is a deliberate fork), so no drift warning is
+    # emitted here.  ``snapshot_drift()`` stays available for callers that
+    # want to check it explicitly.
     return resolved
 
 

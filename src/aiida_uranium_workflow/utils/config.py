@@ -10,7 +10,7 @@ The workflow-specific logic is delegated to the registry in
 
 from __future__ import annotations
 
-from .common import ParamBundle, PARAMETERS_DIR, PROTOCOL_DIR, STATIC_DIR
+from .common import ParamBundle, config_path
 from .yamlio import read_json, read_yaml
 from pathlib import Path
 from typing import Any
@@ -200,7 +200,7 @@ class ConfigLoader:
         if entry.protocol_file is None:
             return []
         names = self._protocol_names(entry)
-        protocol_path = PROTOCOL_DIR / entry.protocol_file
+        protocol_path = config_path("parameters", entry.protocol_file)
         if not protocol_path.is_file():
             return []
         table = read_yaml(protocol_path)
@@ -279,7 +279,7 @@ class ConfigLoader:
                             f"non-empty strings, got {category!r}"
                         )
                     table = read_yaml(
-                        PARAMETERS_DIR / backend / f"{category}.yml"
+                        config_path("parameters", backend, f"{category}.yml")
                     )
                     preset_names = self._coerce_preset_names(
                         backend, category, category_value
@@ -300,7 +300,7 @@ class ConfigLoader:
             if not preset_names:
                 continue
 
-            table = read_yaml(PARAMETERS_DIR / backend / f"{backend}.yml")
+            table = read_yaml(config_path("parameters", backend, f"{backend}.yml"))
             out[backend] = self._resolve_presets(
                 backend,
                 table,
@@ -373,7 +373,7 @@ class ConfigLoader:
     def _load_metadata(self) -> dict[str, Any]:
         """Load metadata from static YAML."""
         name = self.input_params["static"]["metadata"]
-        table = read_yaml(STATIC_DIR / "metadata.yml")
+        table = read_yaml(config_path("static", "metadata.yml"))
         if name not in table:
             raise KeyError(f"Metadata '{name}' not found in metadata.yml")
         return table[name]

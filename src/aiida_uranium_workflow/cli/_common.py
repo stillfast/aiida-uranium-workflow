@@ -607,6 +607,18 @@ def build_unified_parser(
         help="Path to the unified input JSON file.",
     )
     run_p.add_argument(
+        "--config-root",
+        dest="config_root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory holding this run's parameters/ and static/ "
+            "(a scripts tree, e.g. aiida-uranium-scripts-v14). "
+            "Default: $AIIDA_URANIUM_CONFIG_ROOT, else the nearest such "
+            "directory above the input.json, else the package copies."
+        ),
+    )
+    run_p.add_argument(
         "-p",
         "--profile",
         default=None,
@@ -664,6 +676,18 @@ def build_unified_parser(
         dest="output_dir",
         default=None,
         help=("Directory to write reports into. " "Default: <input_dir>/reports."),
+    )
+    report_p.add_argument(
+        "--config-root",
+        dest="config_root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory holding this run's parameters/ and static/ "
+            "(a scripts tree, e.g. aiida-uranium-scripts-v14). "
+            "Default: $AIIDA_URANIUM_CONFIG_ROOT, else the nearest such "
+            "directory above the input.json, else the package copies."
+        ),
     )
     report_p.add_argument(
         "-p",
@@ -825,6 +849,18 @@ def build_unified_parser(
         help="Path to the unified input JSON file.",
     )
     check_p.add_argument(
+        "--config-root",
+        dest="config_root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory holding this run's parameters/ and static/ "
+            "(a scripts tree, e.g. aiida-uranium-scripts-v14). "
+            "Default: $AIIDA_URANIUM_CONFIG_ROOT, else the nearest such "
+            "directory above the input.json, else the package copies."
+        ),
+    )
+    check_p.add_argument(
         "-p",
         "--profile",
         default=None,
@@ -863,6 +899,18 @@ def build_unified_parser(
             "Workflow method (base / smear / convergence / magmom / "
             "banddos / relax / elastic / eos / phonopy / defects / "
             "supercell). Required."
+        ),
+    )
+    example_p.add_argument(
+        "--config-root",
+        dest="config_root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory holding this run's parameters/ and static/ "
+            "(a scripts tree, e.g. aiida-uranium-scripts-v14). "
+            "Default: $AIIDA_URANIUM_CONFIG_ROOT, else the nearest such "
+            "directory above the input.json, else the package copies."
         ),
     )
     example_p.add_argument(

@@ -252,6 +252,58 @@ backend_default (parameters/<code>/<code>.yml)
 protocol (parameters/<method>.yml)        ← 最低优先
 ```
 
+### 5.3 每个 scripts 目录用自己的 `parameters/` + `static/`
+
+`parameters/` 与 `static/` 默认取自**安装包内**，但可以整棵树覆盖 ——
+比如 `aiida-uranium-scripts-v14/parameters/` 放 14 价电子那套预设：
+
+```
+aiida-uranium-scripts-v14/
+├── parameters/            ← 这个目录自己的预设
+│   ├── abacus/test.yml
+│   └── ...
+├── static/
+│   └── structure.yml      ← 可选
+└── test/smear/input.json
+```
+
+解析顺序（第一个命中生效）：
+
+| 顺序 | 来源 |
+|---|---|
+| 1 | `aiida-uranium … --config-root DIR` |
+| 2 | 环境变量 `$AIIDA_URANIUM_CONFIG_ROOT` |
+| 3 | **自动发现**：从 `input.json` 所在目录逐级向上找含 `parameters/` 或 `static/` 的目录（找不到再看 CWD） |
+| 4 | 包内自带（默认，行为与以前完全一致） |
+
+查找是**逐文件**的：覆盖目录里没有的文件自动回退到包内副本，所以一个
+scripts 树只需要放**它真正改过的那几个文件**（整份拷贝也能用）。
+每次 `run` / `report` / `check` / `example` 都会打印实际生效的位置：
+
+```
+[config] parameters/static ← /…/aiida-uranium-scripts-v14 (found above input.json)
+```
+
+```bash
+# 在 scripts 树里直接跑 → 自动用这棵树的 parameters/
+cd aiida-uranium-scripts-v14 && aiida-uranium run -i test/smear/input.json
+
+# 显式指定（优先级最高）
+aiida-uranium run -i input.json --config-root /path/to/anywhere
+
+# 用环境变量（适合写进 wrapper 脚本）
+export AIIDA_URANIUM_CONFIG_ROOT=/path/to/scripts-v14
+```
+
+库调用方（不走 CLI）可以用 `aiida_uranium_workflow.utils.common` 的
+`set_config_root()` / `config_path()`；`PKG_PARAMETERS_DIR` / `PKG_STATIC_DIR`
+始终指向包内副本，`PARAMETERS_DIR` / `STATIC_DIR` 保留为兼容别名。
+
+⚠️ 覆盖目录里的文件必须与**当前包版本**的 schema 一致：旧一代的
+`parameters/smear.yml`（例如把 `smear_list`/`sigma_list` 放在
+`abacus:`/`vasp:` 下）会被当前的协议解析器判为“非空校验失败”。
+遇到这种情况，直接把那个过期文件**从覆盖目录里删掉**即可回退到包内版本。
+
 `ConfigLoader._load_all_software_params()` 把三层 YAML 按 `preset_name` 合并，得到 `ParamBundle.software_params[backend] = [preset_dict, ...]`。
 
 ### 5.3 preset 字段含义（以 `abacus.yml` 为例）

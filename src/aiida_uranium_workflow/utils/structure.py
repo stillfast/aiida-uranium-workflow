@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .common import STATIC_DIR
+from .common import config_path
 from .yamlio import read_yaml
 from typing import Any
 from pathlib import Path
@@ -10,7 +10,15 @@ from pathlib import Path
 import argparse
 import sys
 
-STRUCTURE_YML = STATIC_DIR / "structure.yml"
+#: The *package* copy of the registry (import-time constant, unchanged
+#: meaning).  Reads go through :func:`structure_yml` so that a scripts tree
+#: carrying its own ``static/structure.yml`` is honoured.
+STRUCTURE_YML = Path(__file__).resolve().parent.parent / "static" / "structure.yml"
+
+
+def structure_yml() -> Path:
+    """Resolve ``static/structure.yml`` for the active config root."""
+    return config_path("static", "structure.yml")
 
 
 def classify_structure_ref(ref: Any) -> tuple[str, Any]:
@@ -128,10 +136,10 @@ def build_structure(atom_name: str, *, registry: dict[str, Any] | None = None):
     from pyxtal import pyxtal
 
     if registry is None:
-        registry = read_yaml(STRUCTURE_YML)
+        registry = read_yaml(structure_yml())
 
     if atom_name not in registry:
-        raise KeyError(f"Structure '{atom_name}' not found in {STRUCTURE_YML}")
+        raise KeyError(f"Structure '{atom_name}' not found in {structure_yml()}")
     entry = registry[atom_name]
 
     spg = int(entry["spacegroup"])
@@ -260,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         python -m aiida_uranium_workflow.utils.structure --list
     """
     args = _build_arg_parser().parse_args(argv)
-    registry = read_yaml(STRUCTURE_YML)
+    registry = read_yaml(structure_yml())
 
     if args.list_only:
         print("Available structures:")

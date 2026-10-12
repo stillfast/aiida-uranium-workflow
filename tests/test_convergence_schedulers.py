@@ -292,7 +292,7 @@ class TestMagmomPresetSubkeys:
             "abacus": "magmom",
             "vasp": "magmom",
             "fleur": "magmom",
-            "qe": "magmom",
+            "qe": "scf",
         }
 
 

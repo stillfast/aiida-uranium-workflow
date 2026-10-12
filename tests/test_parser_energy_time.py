@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from aiida_uranium_workflow.utils.parsers import (
+    count_abacus_elec_steps,
     parse_abacus_last_energy,
     parse_total_time,
 )
@@ -87,6 +88,48 @@ class TestParseAbacusLastEnergy:
 
 
 # ---------------------------------------------------------------------------
+# count_abacus_elec_steps
+# ---------------------------------------------------------------------------
+
+
+class TestCountAbacusElecSteps:
+    """Both ABACUS electronic-step log formats must be counted.
+
+    The ``abacus_lts`` build prints ``ION=   1  ELEC=   n`` while the
+    3.9.x / PEXSI build prints ``--> #ION MOVE#   1  #ELEC ITER#   n``.
+    Counting only the legacy format silently reported ``None`` for every
+    run of the newer binary (found on the PEXSI smoke run pk 380925).
+    """
+
+    def test_legacy_format(self) -> None:
+        log = "\n".join(
+            f" ION=   1  ELEC={index:4d}" for index in range(1, 6)
+        )
+        assert count_abacus_elec_steps(log) == 5
+
+    def test_modern_ion_move_format(self) -> None:
+        log = "\n".join(
+            f" --> #ION MOVE#         1  #ELEC ITER#  {index:8d}"
+            for index in range(1, 41)
+        )
+        assert count_abacus_elec_steps(log) == 40
+
+    def test_mixed_formats_takes_the_larger_count(self) -> None:
+        """Each format is counted on its own and the larger count wins,
+        so a log carrying both markers is never double-counted."""
+        legacy = "\n".join(f" ION=   1  ELEC={index:4d}" for index in range(1, 4))
+        modern = " --> #ION MOVE#         1  #ELEC ITER#         1"
+        assert count_abacus_elec_steps(f"{legacy}\n{modern}") == 3
+
+    def test_unrelated_log_returns_none(self) -> None:
+        assert count_abacus_elec_steps("DONE : INIT SCF Time : 0.27 (SEC)") is None
+
+    def test_empty_and_missing_text(self) -> None:
+        assert count_abacus_elec_steps("") is None
+        assert count_abacus_elec_steps(None) is None
+
+
+# ---------------------------------------------------------------------------
 # Smoke check: helpers can be imported without AiiDA profile loaded
 # ---------------------------------------------------------------------------
 
@@ -99,3 +142,31 @@ def test_import_without_aiida_profile():
     """
     # No exception ⇒ the module is import-safe.
     from aiida_uranium_workflow.utils import parsers as parser_energy_time  # noqa: F401
+
+
+class TestFailedNodeTolerance:
+    """``fetch_abacus`` must survive a node without ``misc``/``retrieved``.
+
+    A partly failed parameter scan (see the PEXSI verification steps) keeps
+    the successful cells and records the failed ones; collecting the failed
+    ones used to raise ``NotExistentAttributeError`` and kill the whole
+    WorkChain instead of tabulating them.
+    """
+
+    def test_missing_outputs_return_none(self):
+        from aiida_uranium_workflow.utils.parsers import fetch_summary
+
+        class _Bare:
+            """Node stand-in with neither outputs nor inputs."""
+
+            class outputs:  # noqa: D106
+                pass
+
+            class inputs:  # noqa: D106
+                pass
+
+        summary = fetch_summary(_Bare(), "abacus")
+        assert summary["energy_ev"] is None
+        assert summary["time_s"] is None
+        assert summary["scf_steps"] is None
+        assert summary["natoms"] is None

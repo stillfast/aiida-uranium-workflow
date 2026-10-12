@@ -87,6 +87,49 @@ class TestLoadSpec:
             load_spec(spec_file)
 
 
+class TestPathGeometry:
+    def test_label_ticks_merge_connector(self):
+        """Consecutive labels without interior points (the H→P connector of
+        the bcc path) collapse into a single 'H|P' tick."""
+        from aiida_uranium_workflow.utils.plot.phonon import _label_ticks
+
+        x = np.arange(31.0)  # fake cumulative distance
+        # Realistic bcc boundary indices: only H@25 → P@26 are adjacent.
+        tick_x, tick_text = _label_ticks(
+            x, [0, 5, 10, 15, 20, 25, 26, 30],
+            ["Γ", "H", "N", "Γ", "P", "H", "P", "N"],
+        )
+        assert tick_text == ["Γ", "H", "N", "Γ", "P", "H|P", "N"]
+        assert len(tick_x) == len(tick_text) == 7
+
+    def test_chunked_x_contiguous_arcs(self):
+        from aiida_uranium_workflow.utils.plot.phonon import _chunked_x
+
+        kpts = np.array([[0.0, 0, 0], [1, 0, 0], [2, 0, 0], [5, 0, 0], [6, 0, 0]])
+        x, chunks = _chunked_x(kpts, breaks=[3])
+        # arcs [0..2] and [3..4]; second arc starts where the first ended
+        assert chunks == [(0, 2), (3, 4)]
+        np.testing.assert_allclose(x[:3], [0.0, 1.0, 2.0])
+        np.testing.assert_allclose(x[3:], [2.0, 3.0])
+
+    def test_geometric_boundaries_reversal_with_duplicate(self):
+        """A fold-back point (dot ≈ -1) is a boundary even when a duplicate
+        q-point creates a zero-length step next to it."""
+        from aiida_uranium_workflow.utils.plot.phonon import _geometric_boundaries
+
+        # Γ → H → (H duplicate) → back to Γ: fold at the H point.
+        kpts = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.5, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],  # duplicate (zero step)
+                [0.5, 0.0, 0.0],
+            ]
+        )
+        assert _geometric_boundaries(kpts) == [0, 3, 4]
+
+
 class TestExtractPhononData:
     def test_extracts_bands_and_dos(self, monkeypatch):
         _patch_node_loading(monkeypatch)

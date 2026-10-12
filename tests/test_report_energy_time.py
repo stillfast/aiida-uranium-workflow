@@ -429,7 +429,6 @@ class TestRelaxReport:
         out = {
             "workflow": "relax",
             "backend": "fleur",
-            "mode": "full-relax",
             "lattice_constants": [3.4581, 3.4581, 3.4581],
             "lattice_constant": 3.4581,
             "volume": 25.83,
@@ -449,7 +448,6 @@ class TestRelaxReport:
         out = {
             "workflow": "relax",
             "backend": "abacus",
-            "mode": "volume",
             "lattice_constants": [3.4581, 3.4581, 3.4581],
             "lattice_constant": 3.4581,
             "volume": 25.83,

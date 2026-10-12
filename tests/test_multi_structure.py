@@ -253,18 +253,40 @@ class TestStaticStructureValidation:
             ConfigLoader(path).load_all()
 
     def test_list_with_non_string_raises(self, tmp_path: Path) -> None:
+        """Non-str/int/uuid entries are rejected (int entries are pks)."""
         from aiida_uranium_workflow.utils.config import ConfigLoader
 
-        path = _write_input(tmp_path, structure=["bcc-uranium", 123])
-        with pytest.raises(TypeError, match="string or a list of strings"):
-            ConfigLoader(path).load_all()
+        loader = ConfigLoader.__new__(ConfigLoader)
+        loader.input_params = {"static": {"structure": ["bcc-uranium", 1.5]}}
+        with pytest.raises(TypeError, match="registry name, a pk"):
+            loader._validate_static()
 
     def test_non_string_non_list_raises(self, tmp_path: Path) -> None:
         from aiida_uranium_workflow.utils.config import ConfigLoader
 
-        path = _write_input(tmp_path, structure=42)
-        with pytest.raises(TypeError, match="string or a list of strings"):
-            ConfigLoader(path).load_all()
+        loader = ConfigLoader.__new__(ConfigLoader)
+        loader.input_params = {"static": {"structure": {"nope": 1}}}
+        with pytest.raises(TypeError, match="registry name, a pk"):
+            loader._validate_static()
+
+    def test_pk_and_uuid_entries_validate(self) -> None:
+        """``static.structure`` may reference stored nodes by pk or uuid."""
+        from aiida_uranium_workflow.utils.config import ConfigLoader
+
+        loader = ConfigLoader.__new__(ConfigLoader)
+        loader.input_params = {
+            "static": {
+                "structure": [
+                    "bcc-uranium",                                   # registry name
+                    12345,                                           # pk (int)
+                    "67890",                                         # pk (string)
+                    "3f2a1b4c-5d6e-7f80-9a0b-1c2d3e4f5061",          # uuid
+                    {"pk": 42},                                      # explicit pk
+                    {"uuid": "3f2a1b4c5d6e7f809a0b1c2d3e4f5061"},    # bare uuid
+                ]
+            }
+        }
+        loader._validate_static()  # must not raise
 
     def test_missing_static_structure_key_raises(self, tmp_path: Path) -> None:
         from aiida_uranium_workflow.utils.config import ConfigLoader
@@ -422,9 +444,20 @@ class TestBuildStructureValidation:
 
         orchestrator = WorkflowOrchestrator.__new__(WorkflowOrchestrator)
         orchestrator.bundle = type(
-            "B", (), {"input_params": {"static": {"structure": ["ok", 5]}}}
+            "B", (), {"input_params": {"static": {"structure": [1.5, "ok"]}}}
         )()
-        with pytest.raises(TypeError, match="string or a list of strings"):
+        with pytest.raises(TypeError):
+            orchestrator._build_structure()
+
+    def test_unknown_pk_raises(self, monkeypatch, aiida_profile_clean):
+        """A pk that does not resolve to a StructureData fails loudly."""
+        from aiida_uranium_workflow.schedulers.base import WorkflowOrchestrator
+
+        orchestrator = WorkflowOrchestrator.__new__(WorkflowOrchestrator)
+        orchestrator.bundle = type(
+            "B", (), {"input_params": {"static": {"structure": [999999999]}}}
+        )()
+        with pytest.raises(ValueError, match="could not be loaded"):
             orchestrator._build_structure()
 
     def test_empty_list_raises(self, monkeypatch, aiida_profile_clean):
@@ -436,6 +469,64 @@ class TestBuildStructureValidation:
         )()
         with pytest.raises(ValueError, match="non-empty"):
             orchestrator._build_structure()
+
+
+class TestStructureReferences:
+    """``static.structure`` entries may be registry names *or* pks / uuids
+    of structures already stored in the profile (e.g. POSCAR imports)."""
+
+    def test_classify_structure_ref(self):
+        from aiida_uranium_workflow.utils.structure import classify_structure_ref
+
+        assert classify_structure_ref("bcc-uranium") == ("name", "bcc-uranium")
+        assert classify_structure_ref(12345) == ("pk", 12345)
+        assert classify_structure_ref("12345") == ("pk", 12345)
+        assert classify_structure_ref({"pk": 7}) == ("pk", 7)
+        kind, value = classify_structure_ref({"uuid": "3F2A1B4C-5D6E-7F80-9A0B-1C2D3E4F5061"})
+        assert kind == "uuid"
+        assert value == "3f2a1b4c-5d6e-7f80-9a0b-1c2d3e4f5061"  # normalised
+        assert classify_structure_ref("3f2a1b4c5d6e7f809a0b1c2d3e4f5061")[0] == "uuid"
+        with pytest.raises(TypeError):
+            classify_structure_ref(1.5)
+        with pytest.raises(ValueError):
+            classify_structure_ref({"nope": 1})
+
+    def test_mixed_refs_resolve(self, monkeypatch, aiida_profile_clean):
+        """Names still go through pyxtal; identifiers load the stored node."""
+        from aiida_uranium_workflow.schedulers import base as scheduler_base
+        from aiida_uranium_workflow.utils.structure import classify_structure_ref
+
+        monkeypatch.setattr(
+            scheduler_base, "build_structure", lambda name, **_kw: f"atoms::{name}"
+        )
+        monkeypatch.setattr(
+            scheduler_base,
+            "load_structure_node",
+            lambda ref: (
+                None
+                if classify_structure_ref(ref)[0] == "name"
+                else f"node::{ref}"
+            ),
+        )
+
+        import aiida.orm as aiida_orm
+
+        monkeypatch.setattr(
+            aiida_orm, "StructureData", lambda **_kw: _kw.get("ase")
+        )
+
+        orchestrator = scheduler_base.WorkflowOrchestrator.__new__(
+            scheduler_base.WorkflowOrchestrator
+        )
+        orchestrator.bundle = type(
+            "B",
+            (),
+            {"input_params": {"static": {"structure": ["bcc-uranium", 12345]}}},
+        )()
+
+        assert orchestrator._build_structure() == ["atoms::bcc-uranium", "node::12345"]
+        # Identifier entries get a stable, readable label for output.json.
+        assert orchestrator._structure_names() == ["bcc-uranium", "pk12345"]
 
 
 class TestLabelFormatting:

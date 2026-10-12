@@ -20,9 +20,26 @@ from aiida_uranium_workflow.utils.report.eos import (
 
 class TestProtocolParser:
     def test_splits_backends(self):
+        proto = {
+            "abacus": {"points": 7},
+            "fleur": {"step": 0.01},
+            "qe": {"points": 11, "step": 0.01},
+        }
+        out = parse_eos_protocol(proto)
+        assert out == {
+            "abacus": {"points": 7},
+            "fleur": {"step": 0.01},
+            "qe": {"points": 11, "step": 0.01},
+        }
+
+    def test_splits_backends_missing_qe_block(self):
         proto = {"abacus": {"points": 7}, "fleur": {"step": 0.01}}
         out = parse_eos_protocol(proto)
-        assert out == {"abacus": {"points": 7}, "fleur": {"step": 0.01}}
+        assert out == {
+            "abacus": {"points": 7},
+            "fleur": {"step": 0.01},
+            "qe": {},
+        }
 
     def test_empty(self):
         assert parse_eos_protocol(None) == {}

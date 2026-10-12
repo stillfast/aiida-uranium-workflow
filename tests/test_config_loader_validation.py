@@ -93,23 +93,42 @@ class TestValidateStatic:
         with pytest.raises(ValueError, match="non-empty"):
             ConfigLoader(path).load_all()
 
-    def test_non_string_element_raises(self, tmp_path: Path) -> None:
-        path = _write_input(
-            tmp_path,
-            _minimal_input(
-                static={"structure": ["si", 42], "metadata": "yeesuan"}
-            ),
-        )
-        with pytest.raises(TypeError, match="string or a list of strings"):
-            ConfigLoader(path).load_all()
+    def test_invalid_element_type_raises(self) -> None:
+        """A float / malformed dict is rejected — but ``42`` is a valid **pk**.
 
-    def test_wrong_type_raises(self, tmp_path: Path) -> None:
-        path = _write_input(
-            tmp_path,
-            _minimal_input(static={"structure": 42, "metadata": "yeesuan"}),
-        )
-        with pytest.raises(TypeError, match="string or a list of strings"):
-            ConfigLoader(path).load_all()
+        ``static.structure`` accepts registry names *and* identifiers
+        (pk / uuid) of already-stored nodes, so the old "list of strings
+        only" contract no longer holds.  Checked directly on
+        ``_validate_static`` to stay independent of the preset files.
+        """
+        loader = ConfigLoader.__new__(ConfigLoader)
+        for bad in (["si", 1.5], {"nope": 1}):
+            loader.input_params = {"static": {"structure": bad}}
+            with pytest.raises(TypeError, match="registry name, a pk"):
+                loader._validate_static()
+
+    def test_wrong_type_raises(self) -> None:
+        """A bare float (not a pk, name or uuid) is rejected."""
+        loader = ConfigLoader.__new__(ConfigLoader)
+        loader.input_params = {"static": {"structure": 1.5}}
+        with pytest.raises(TypeError, match="registry name, a pk"):
+            loader._validate_static()
+
+    def test_pk_and_uuid_entries_accepted(self) -> None:
+        """pks (int / digit string / dict) and uuids validate."""
+        loader = ConfigLoader.__new__(ConfigLoader)
+        loader.input_params = {
+            "static": {
+                "structure": [
+                    "si",
+                    42,
+                    "67890",
+                    {"pk": 7},
+                    {"uuid": "3f2a1b4c-5d6e-7f80-9a0b-1c2d3e4f5061"},
+                ]
+            }
+        }
+        loader._validate_static()  # must not raise
 
     def test_missing_structure_raises(self, tmp_path: Path) -> None:
         path = _write_input(

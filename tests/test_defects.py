@@ -225,3 +225,216 @@ class TestReport:
         assert "formation energy | -3.750000 eV" in md
         assert "formula | E_defect − E_host × N_defect/N_host" in md
         assert "vacancy" in md
+
+
+class TestSupercellMatrixSpec:
+    """Normalisation of the supercell_matrix / supercell_matrices preset keys."""
+
+    def test_single_diagonal(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        assert normalize_supercell_matrices([2, 2, 2]) == [[2, 2, 2]]
+        assert normalize_supercell_matrices(None) == []
+
+    def test_single_3x3(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        m = [[2, 0, 0], [0, 3, 0], [0, 0, 4]]
+        assert normalize_supercell_matrices(m) == [m]
+
+    def test_list_of_diagonals(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        assert normalize_supercell_matrices([[2, 2, 2], [3, 3, 3]]) == [
+            [2, 2, 2],
+            [3, 3, 3],
+        ]
+
+    def test_three_diagonal_rows_are_three_cells(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        assert normalize_supercell_matrices([[2, 2, 2], [3, 3, 3], [4, 4, 4]]) == [
+            [2, 2, 2],
+            [3, 3, 3],
+            [4, 4, 4],
+        ]
+
+    def test_mixed_list(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        m = [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        assert normalize_supercell_matrices([m, [3, 3, 3]]) == [m, [3, 3, 3]]
+
+    def test_labels(self):
+        from aiida_uranium_workflow.utils.defects import supercell_label
+
+        assert supercell_label([2, 2, 2]) == "2x2x2"
+        assert supercell_label([[2, 0, 0], [0, 3, 0], [0, 0, 4]]) == "2x3x4"
+        assert supercell_label([[2, 1, 0], [0, 2, 0], [0, 0, 2]]) == "m3x3"
+
+    def test_bad_spec_raises(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_matrices
+
+        with pytest.raises(ValueError):
+            normalize_supercell_matrices([2, 2])
+        with pytest.raises(TypeError):
+            normalize_supercell_matrices("2x2x2")
+
+
+class TestMultiCellReport:
+    def test_cells_table_rendered(self):
+        from aiida_uranium_workflow.utils.report.defects import generate_report
+
+        params = {
+            "workflow": "defects",
+            "mode": "scf",
+            "defect": {"type": "vacancy", "label": "vac_U_0"},
+            "n_cells": 2,
+            "cells": [
+                {"label": "2x2x2", "matrix": [2, 2, 2], "host_natoms": 8,
+                 "defect_natoms": 7, "host_energy_ev": -110.0,
+                 "defect_energy_ev": -100.0, "formation_energy_ev": -3.75},
+                {"label": "3x3x3", "matrix": [3, 3, 3], "host_natoms": 27,
+                 "defect_natoms": 26, "host_energy_ev": -371.0,
+                 "defect_energy_ev": -360.0, "formation_energy_ev": -2.85},
+            ],
+        }
+        report = generate_report(params, 42, "abacus")
+        assert "Supercell convergence (2 cells)" in report
+        assert "| 2x2x2 |" in report and "| 3x3x3 |" in report
+        assert "-3.7500" in report
+
+    def test_single_cell_has_no_table(self):
+        from aiida_uranium_workflow.utils.report.defects import generate_report
+
+        params = {
+            "defect": {"type": "vacancy"},
+            "n_cells": 1,
+            "cells": [{"label": "2x2x2", "formation_energy_ev": -3.75}],
+        }
+        report = generate_report(params, 42, "abacus")
+        assert "Supercell convergence" not in report
+
+
+class TestPerCellKpointsSpec:
+    """supercell_cells: per-cell matrix + k-mesh specs."""
+
+    def test_cells_with_meshes(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
+
+        spec = [
+            {"matrix": [2, 2, 2], "kpoints_mesh": [7, 7, 7]},
+            {"matrix": [3, 3, 3], "kpoints_mesh": [5, 5, 5], "label": "big"},
+        ]
+        assert normalize_supercell_cells(spec) == [
+            {"matrix": [2, 2, 2], "kpoints_mesh": [7, 7, 7]},
+            {"matrix": [3, 3, 3], "kpoints_mesh": [5, 5, 5], "label": "big"},
+        ]
+
+    def test_distance_and_bare_matrix_mixed(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
+
+        spec = [{"matrix": [2, 2, 2], "kpoints_distance": 0.1}, [3, 3, 3]]
+        assert normalize_supercell_cells(spec) == [
+            {"matrix": [2, 2, 2], "kpoints_distance": 0.1},
+            {"matrix": [3, 3, 3]},
+        ]
+
+    def test_unknown_cell_key_raises(self):
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
+
+        with pytest.raises(ValueError, match="unknown per-cell keys"):
+            normalize_supercell_cells([{"matrix": [2, 2, 2], "nonsense": 1}])
+
+    def test_per_cell_scf_override_is_idempotent(self):
+        """Normalising twice must not fail (the CLI adapter and the WorkChain
+        both normalise the protocol).
+
+        Regression: the adapter stores cells carrying ``{'scf': {...}}`` in
+        the ``supercell_cells`` List; the WorkChain normalises them again, so
+        a second pass has to accept the already-collected ``scf`` mapping
+        instead of raising "unknown per-cell keys ['scf']".
+        """
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
+
+        spec = [
+            {"matrix": [5, 5, 5], "mixing_ndim": 16},
+            {"matrix": [6, 6, 6], "mixing_ndim": 24, "scf_nmax": 250},
+        ]
+        once = normalize_supercell_cells(spec)
+        twice = normalize_supercell_cells(once)
+        assert once == twice
+        assert once[0]["scf"] == {"mixing_ndim": 16}
+        assert once[1]["scf"] == {"mixing_ndim": 24, "scf_nmax": 250}
+
+    def test_per_cell_scf_unknown_key_raises(self):
+        """An unknown key inside the collected ``scf`` mapping is rejected."""
+        from aiida_uranium_workflow.utils.defects import normalize_supercell_cells
+
+        with pytest.raises(ValueError, match="unknown SCF override keys"):
+            normalize_supercell_cells([{"matrix": [2, 2, 2], "scf": {"nope": 1}}])
+
+
+class TestPerCellKpointsReport:
+    def test_kmesh_column(self):
+        from aiida_uranium_workflow.utils.report.defects import generate_cells_table
+
+        table = generate_cells_table(
+            {
+                "cells": [
+                    {"label": "2x2x2", "matrix": [2, 2, 2], "kpoints_mesh": [7, 7, 7],
+                     "host_natoms": 8, "defect_natoms": 7,
+                     "host_energy_ev": -110.0, "defect_energy_ev": -100.0,
+                     "formation_energy_ev": -3.75},
+                    {"label": "3x3x3", "matrix": [3, 3, 3], "kpoints_distance": 0.05,
+                     "host_natoms": 27, "defect_natoms": 26,
+                     "host_energy_ev": -371.0, "defect_energy_ev": -360.0,
+                     "formation_energy_ev": -2.85},
+                ]
+            }
+        )
+        assert "| k-mesh |" in table
+        # integer matrices / k-meshes render without decimals
+        assert "[7, 7, 7]" in table
+        assert "0.050000 Å⁻¹" in table
+
+
+class TestRuntimeColumns:
+    def test_cells_table_has_time_and_steps(self):
+        """The per-cell table reports wall time + SCF steps per leg."""
+        from aiida_uranium_workflow.utils.report.defects import generate_cells_table
+
+        table = generate_cells_table(
+            {
+                "cells": [
+                    {
+                        "label": "5x5x5",
+                        "matrix": [5, 5, 5],
+                        "kpoints_mesh": [1, 1, 1],
+                        "host_natoms": 250,
+                        "defect_natoms": 249,
+                        "host_energy_ev": -3383177.0,
+                        "defect_energy_ev": -3369642.0,
+                        "formation_energy_ev": 2.077,
+                        "time_host_s": 745.0,
+                        "time_defect_s": 759.0,
+                        "scf_steps_host": 11,
+                        "scf_steps_defect": 60,
+                    },
+                    {  # legacy cell without the new fields → dashes, no crash
+                        "label": "2x2x2",
+                        "matrix": [2, 2, 2],
+                        "host_natoms": 16,
+                        "defect_natoms": 15,
+                        "host_energy_ev": -1.0,
+                        "defect_energy_ev": -1.0,
+                        "formation_energy_ev": 0.0,
+                    },
+                ]
+            }
+        )
+        header = table.splitlines()[0]
+        for col in ("t_host (s)", "t_defect (s)", "steps host", "steps defect"):
+            assert col in header
+        assert "| 745 | 759 | 11 | 60 |" in table
+        assert table.count("| — | — | — | — |") == 1

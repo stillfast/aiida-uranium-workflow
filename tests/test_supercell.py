@@ -127,6 +127,57 @@ class TestAdapter:
         err = SupercellScfWorkChain.spec().inputs.validate(inputs)
         assert err is None, f"spec validation failed: {err}"
 
+    def test_preset_calculation_is_honoured(self, aiida_profile, aiida_localhost):
+        """An explicit ``calculation`` in the preset (e.g. nscf running on
+        a stored density) must NOT be overwritten with scf."""
+        from aiida import orm
+        from aiida_uranium_workflow.input_builders.supercell.abacus import (
+            AbacusSupercellAdapter,
+        )
+        from ase.build import bulk
+
+        computer = aiida_localhost
+        orm.InstalledCode(
+            label="supercell_nscf_test",
+            computer=computer,
+            filepath_executable="/bin/true",
+        ).store()
+
+        proto = {
+            "abacus": {
+                "supercells": [
+                    {"matrix": [[8, 0, 0], [0, 8, 0], [0, 0, 8]], "label": "8x8x8"}
+                ]
+            }
+        }
+        structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
+
+        # explicit nscf survives
+        nscf = AbacusSupercellAdapter(
+            code_label=f"supercell_nscf_test@{computer.label}",
+            software_params={
+                "parameters": {"input": {"calculation": "nscf", "nbands": 18842}},
+                "kpoints_mesh": [1, 1, 1],
+                "pseudo_family": "sg15_sz",
+            },
+            metadata={},
+            workflow_data=proto,
+        )._build_workchain_inputs(structure)
+        assert nscf["base"]["abacus"]["parameters"].get_dict()["input"]["calculation"] == "nscf"
+
+        # absent -> scf default
+        default = AbacusSupercellAdapter(
+            code_label=f"supercell_nscf_test@{computer.label}",
+            software_params={
+                "parameters": {"input": {"nspin": 1}},
+                "kpoints_mesh": [1, 1, 1],
+                "pseudo_family": "sg15_sz",
+            },
+            metadata={},
+            workflow_data=proto,
+        )._build_workchain_inputs(structure)
+        assert default["base"]["abacus"]["parameters"].get_dict()["input"]["calculation"] == "scf"
+
     def test_missing_supercells_raises(self, aiida_profile, aiida_localhost):
         from aiida import orm
         from ase.build import bulk
@@ -209,6 +260,133 @@ class TestScfInputsFor:
         # The rest of the base SCF input survives.
         assert pinput["nspin"] == 1
 
+    def test_pexsi_overrides_reach_input(self):
+        """PEXSI pole-expansion keys are per-cell overridable: the pole
+        count has to grow with the cell size, so a scan cannot freeze it
+        in the shared base preset."""
+        process = self._process()
+        base = self._base()
+        from aiida import orm
+
+        base["abacus"]["parameters"] = orm.Dict(
+            dict={
+                "input": {
+                    "nspin": 1,
+                    "ks_solver": "pexsi",
+                    "gamma_only": 1,
+                    "pexsi_npole": 60,
+                    "pexsi_temp": 0.0073529411764706,
+                    "pexsi_nproc_pole": 2,
+                    "smearing_method": "fd",
+                    "smearing_sigma": 0.0073529411764706,
+                }
+            }
+        )
+        cell = {
+            "entry": {"pexsi_npole": 120, "pexsi_elec_thr": 1e-5},
+            "label": "8x8x8_npole120",
+            "structure": object(),
+        }
+        pinput = process._scf_inputs_for(cell, base)["abacus"][
+            "parameters"
+        ].get_dict()["input"]
+        assert pinput["pexsi_npole"] == 120
+        assert pinput["pexsi_elec_thr"] == 1e-5
+        # untouched base keys survive
+        assert pinput["ks_solver"] == "pexsi"
+        assert pinput["pexsi_temp"] == 0.0073529411764706
+
+    def test_mixing_restart_preset_reaches_child_input(self):
+        """``test_mixing_restart`` must actually vary ``mixing_restart``.
+
+        ``_scf_inputs_for`` copies only ``_SCF_OVERRIDE_KEYS``; a key
+        outside that tuple is dropped silently, so the scan would submit
+        four identical 1024-atom SCFs (and 'test' nothing). Read the
+        preset straight from ``supercell.yml`` so the yml and the
+        whitelist cannot drift apart again.
+        """
+        import yaml
+        from aiida import orm
+
+        from aiida_uranium_workflow.utils.common import PARAMETERS_DIR
+
+        proto = yaml.safe_load(
+            (PARAMETERS_DIR / "supercell.yml").read_text()
+        )["test_mixing_restart"]["abacus"]["supercells"]
+
+        process = self._process()
+        base = self._base()
+        base["abacus"]["parameters"] = orm.Dict(
+            dict={"input": {"nspin": 1, "mixing_beta": 0.5, "mixing_ndim": 8}}
+        )
+
+        seen = []
+        for entry in proto:
+            cell = {
+                "entry": entry,
+                "label": entry["label"],
+                "structure": object(),
+            }
+            pinput = process._scf_inputs_for(cell, base)["abacus"][
+                "parameters"
+            ].get_dict()["input"]
+            assert pinput["mixing_restart"] == entry["mixing_restart"]
+            assert pinput["mixing_dmr"] == entry["mixing_dmr"]
+            assert pinput["mixing_beta"] == 0.5  # base survives
+            seen.append(pinput["mixing_restart"])
+
+        # The whole point of the preset: one distinct threshold per cell.
+        # (The yml is edited by hand — do not pin the exact cell count.)
+        assert len(proto) >= 2
+        assert len(set(map(str, seen))) == len(proto)
+
+    def test_every_preset_entry_key_reaches_child_input(self):
+        """Invariant across the whole protocol file: every per-cell key in
+        ``supercell.yml`` must reach the child's ABACUS ``input`` block.
+
+        ``_scf_inputs_for`` copies only ``_SCF_OVERRIDE_KEYS``, so a key
+        missing from that tuple is dropped **silently** — the cell then
+        just re-runs the base preset. This has already bitten
+        ``mixing_restart`` and ``mixing_gg0``: both scans would have
+        submitted four identical 1024-atom SCFs. Reading the presets
+        straight from the yml keeps the file and the whitelist in sync.
+        """
+        import yaml
+        from aiida import orm
+
+        from aiida_uranium_workflow.utils.common import PARAMETERS_DIR
+
+        presets = yaml.safe_load((PARAMETERS_DIR / "supercell.yml").read_text())
+        # Handled outside the plain ``input`` merge.
+        special = {"matrix", "label", "kpoints_mesh", "kpoints_distance"}
+
+        process = self._process()
+        base = self._base()
+        base["abacus"]["parameters"] = orm.Dict(dict={"input": {"nspin": 1}})
+
+        checked = 0
+        for preset, block in presets.items():
+            for entry in (block.get("abacus") or {}).get("supercells") or []:
+                cell = {
+                    "entry": entry,
+                    "label": str(entry.get("label") or preset),
+                    "structure": object(),
+                }
+                pinputs = process._scf_inputs_for(cell, base)["abacus"][
+                    "parameters"
+                ].get_dict()["input"]
+                for key, value in entry.items():
+                    if key in special:
+                        continue
+                    assert key in pinputs, (
+                        f"{preset}/{cell['label']}: '{key}' is not in "
+                        f"_SCF_OVERRIDE_KEYS — it would be silently dropped"
+                    )
+                    assert pinputs[key] == value
+                    checked += 1
+        # Guard against a yml refactor quietly emptying this test.
+        assert checked > 40
+
 
 class TestReport:
     def test_table_renders_rows(self):
@@ -229,9 +407,13 @@ class TestReport:
         assert "| 2x2x2 |" in report
         assert "41.086" in report
         # time + scf steps columns present; scf pk column dropped.
-        assert "| time (s) | scf steps |" in report
-        assert "| 120.500 | 21 |" in report
-        assert "| 3600.000 | 35 |" in report
+        assert "| energy/atom (eV) | time (s) | scf steps |" in report
+        # wall time is rendered as integer seconds
+        assert "| 120 | 21 |" in report
+        assert "| 3600 | 35 |" in report
+        # average atomic energy column (energy / natoms, derived when the
+        # stored energy_per_atom is missing)
+        assert "| -13532.865000 |" in report
         assert "scf pk" not in report
 
     def test_time_and_steps_default_to_dash(self):
@@ -277,9 +459,68 @@ class TestReport:
         monkeypatch.setattr(parsers, "fetch_summary", _fake_fetch_summary)
 
         table = report_mod.generate_summary_table(out)
-        assert "| 3600.000 | 42 |" in table
+        assert "| 3600 | 42 |" in table
         assert fetched["called_with"] == [(12345, "abacus")]
 
     def test_empty(self):
         report = generate_report({"cells": []}, pk=1, workflow_type="abacus")
         assert "No supercell data available." in report
+
+
+class TestPartialFailureReporting:
+    """A scan whose cells partly fail must still be tabulated.
+
+    The PEXSI verification steps contain cells that are *expected* to fail
+    (pole count outside PEXSI's table, an SCF that cannot converge). Aborting
+    in ``inspect_scfs`` left the WorkChain without ``output_parameters``, so
+    the report showed nothing at all for that step.
+    """
+
+    def test_collect_results_records_failed_cells(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from aiida import orm
+        from ase.build import bulk
+        from aiida_uranium_workflow.utils import parsers
+        from aiida_uranium_workflow.workflows.supercell import abacus as wc_mod
+
+        class _FakeChild:
+            def __init__(self, pk, energy):
+                self.pk = pk
+                self.exit_status = 0 if energy is not None else 302
+                self._energy = energy
+
+        chain = wc_mod.SupercellScfWorkChain
+        process = object.__new__(chain)
+        structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
+        ctx = SimpleNamespace(
+            cells=[
+                {"idx": 0, "label": "ok",
+                 "matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "structure": structure},
+                {"idx": 1, "label": "bad",
+                 "matrix": [[2, 0, 0], [0, 2, 0], [0, 0, 2]], "structure": structure},
+            ],
+            scf_0=_FakeChild(1, -123.0),
+            scf_1=_FakeChild(2, None),
+        )
+        monkeypatch.setattr(chain, "ctx", property(lambda self: ctx), raising=False)
+
+        collected = {}
+        monkeypatch.setattr(process, "out", lambda key, value: collected.__setitem__(key, value))
+        monkeypatch.setattr(process, "report", lambda _msg: None)
+        monkeypatch.setattr(
+            parsers, "fetch_summary",
+            lambda node, backend: {"energy_ev": node._energy, "time_s": 1.0,
+                                   "scf_steps": 3, "natoms": 2},
+        )
+
+        assert process.collect_results() is chain.exit_codes.ERROR_CHILD
+
+        payload = collected["output_parameters"].get_dict()
+        assert [c["label"] for c in payload["cells"]] == ["ok", "bad"]
+        assert payload["cells"][0]["status"] == "ok"
+        assert payload["cells"][1]["status"] == "failed"
+        assert payload["cells"][1]["energy"] is None
+        assert payload["cells"][1]["exit_status"] == 302
+        assert payload["failed_cells"] == ["bad"]
+        assert payload["n_cells"] == 2 and payload["n_failed"] == 1

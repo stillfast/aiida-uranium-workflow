@@ -123,9 +123,75 @@ class TestBuildCalJsonUUIDs:
         assert '"pw": 42' not in rendered
 
 
+class TestBuildCalJsonMultipleStructures:
+    """One preset run for several structures must keep every identifier.
+
+    Regression guard: the leaf key used to be the bare preset name, so a
+    12-structure scan (``static.structure: [pk1, …]``) recorded only the
+    UUID of the *last* submission and silently dropped the other 11.
+    """
+
+    def test_structures_are_disambiguated(self):
+        jobs = [
+            SubmittedJob(
+                backend="abacus",
+                preset_name="lcao_twist",
+                pk=100,
+                structure_name="pk385956",
+                uuid=UUID_PW,
+            ),
+            SubmittedJob(
+                backend="abacus",
+                preset_name="lcao_twist",
+                pk=101,
+                structure_name="pk385957",
+                uuid=UUID_PW_R,
+            ),
+        ]
+        key_dict = build_cal_json(jobs, workflow="base")["abacus"]["abacus"]
+        assert key_dict == {
+            "lcao_twist@pk385956": UUID_PW,
+            "lcao_twist@pk385957": UUID_PW_R,
+        }
+        # Both identifiers survive the walker the CLI uses.
+        assert sorted(collect_identifiers_from_json(build_cal_json(jobs, workflow="base"))) == sorted(
+            [UUID_PW, UUID_PW_R]
+        )
+
+    def test_single_structure_key_is_unchanged(self):
+        """A unique (preset, structure) pair keeps the plain key."""
+        jobs = [
+            SubmittedJob(
+                backend="abacus",
+                preset_name="lcao_twist",
+                pk=100,
+                structure_name="pk385956",
+                uuid=UUID_PW,
+            )
+        ]
+        assert build_cal_json(jobs, workflow="base")["abacus"]["abacus"] == {
+            "lcao_twist": UUID_PW
+        }
+
+    def test_same_structure_two_presets_keeps_plain_keys(self):
+        jobs = [
+            SubmittedJob(
+                backend="abacus", preset_name="lcao_1q", pk=1,
+                structure_name="bcc-uranium", uuid=UUID_PW,
+            ),
+            SubmittedJob(
+                backend="abacus", preset_name="lcao_1q_soc", pk=2,
+                structure_name="bcc-uranium", uuid=UUID_PW_R,
+            ),
+        ]
+        assert build_cal_json(jobs, workflow="base")["abacus"]["abacus"] == {
+            "lcao_1q": UUID_PW,
+            "lcao_1q_soc": UUID_PW_R,
+        }
+
+
 class TestWriteCalJsonRoundTrip:
     """``write_cal_json`` actually writes a JSON file."""
-
     def test_write_and_readback(self, tmp_path):
         out_path = tmp_path / "output.json"
         jobs = [

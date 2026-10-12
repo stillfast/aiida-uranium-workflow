@@ -171,3 +171,170 @@ class TestSpeciesSplit:
         new_structure, entries = adapter._prepare_structure_and_entries(structure)
         assert new_structure is structure
         assert entries == [{"U": 0.0}, {"U": 2.0}]
+
+
+class TestLoadFamilyAmbiguous:
+    """A collection and a family group sharing one label must resolve to
+    the family-type group (regression: aiida-abacus' install-collection +
+    create-family can produce both under the same label, and plain
+    ``load_group`` then raises MultipleObjectsError)."""
+
+    def test_prefers_family_type(self, aiida_profile):
+        from aiida import orm
+        from aiida.common.exceptions import MultipleObjectsError
+        from aiida.plugins import GroupFactory
+        from aiida_uranium_workflow.input_builders.magmom import qe as qe_mod
+        from aiida_uranium_workflow.input_builders.magmom.qe import QeMagmomAdapter
+
+        label = "dup_soc_qe"
+        # A plain (collection-like) group and a family-type group, same label.
+        orm.Group(label=label).store()
+        family_cls = GroupFactory("abacus.orbital_family")
+        family = family_cls(label=label).store()
+
+        def _ambiguous(*_args, **_kwargs):
+            raise MultipleObjectsError("multiple Group entries found")
+
+        # The adapter's module-level load_group is what _load_family calls;
+        # make it raise so the QueryBuilder fallback is exercised.
+        monkeypatch = __import__("pytest").MonkeyPatch()
+        monkeypatch.setattr(qe_mod, "load_group", _ambiguous)
+        try:
+            adapter = QeMagmomAdapter(
+                code_label="x@localhost",
+                software_params={"pseudo_family": label},
+                metadata={},
+                workflow_data={"magmom_lists": {"qe": {"magmom_list": [{"U": 0.0}]}}},
+                extra_codes={},
+            )
+            loaded = adapter._load_family()
+        finally:
+            monkeypatch.undo()
+
+        assert loaded.label == label
+        # The family-type group (not the plain one) was selected.
+        assert loaded.uuid == family.uuid
+
+    def test_unique_label_unchanged(self, aiida_profile):
+        from aiida import orm
+        from aiida_uranium_workflow.input_builders.magmom.qe import QeMagmomAdapter
+
+        grp = orm.Group(label="unique_qe_family").store()
+        adapter = QeMagmomAdapter(
+            code_label="x@localhost",
+            software_params={"pseudo_family": "unique_qe_family"},
+            metadata={},
+            workflow_data={"magmom_lists": {"qe": {"magmom_list": [{"U": 0.0}]}}},
+            extra_codes={},
+        )
+        assert adapter._load_family().pk == grp.pk
+
+
+class TestSocSeeds:
+    """Non-collinear / SOC seeds: reserved angle keys must not be treated
+    as split species, and the WorkChain must not force nspin=2 for SOC."""
+
+    def test_expand_entries_keeps_angles(self):
+        from aiida_uranium_workflow.input_builders.magmom.qe import QeMagmomAdapter
+
+        entries = [
+            {"U1": 2.0, "U2": 2.0, "angle1": {"U1": 0.0, "U2": 180.0}},
+            {"U": 0.0},
+        ]
+        out = QeMagmomAdapter._expand_entries(entries, ["U1", "U2"])
+        assert out[0] == {
+            "U1": 2.0,
+            "U2": 2.0,
+            "angle1": {"U1": 0.0, "U2": 180.0},
+        }
+        assert out[1] == {"U1": 0.0, "U2": 0.0}  # element-level FM expands
+
+    def test_angles_do_not_trigger_species_split(self, aiida_profile):
+        from ase.build import bulk
+        from aiida import orm
+        from aiida_uranium_workflow.input_builders.magmom.qe import QeMagmomAdapter
+
+        structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45))
+        adapter = QeMagmomAdapter(
+            code_label="x@localhost", software_params={}, metadata={},
+            workflow_data={
+                "magmom_lists": {"qe": {"magmom_list": [
+                    {"U": 2.0, "angle1": {"U": 0.0}},
+                ]}}
+            },
+            extra_codes={},
+        )
+        new_structure, entries = adapter._prepare_structure_and_entries(structure)
+        # angle1 alone (U element key) must NOT trigger a U1/U2 split.
+        assert [s.kind_name for s in new_structure.sites] == ["U"]
+        assert entries == [{"U": 2.0, "angle1": {"U": 0.0}}]
+
+    def test_workchain_soc_injection(self, aiida_profile_clean, aiida_localhost, monkeypatch):
+        """SOC preset: nspin stays as preset (1), angle keys land in SYSTEM."""
+        from ase.build import bulk
+
+        from aiida import orm
+        from aiida.engine.utils import instantiate_process
+        from aiida.manage.manager import get_manager
+        from aiida.orm import UpfData
+        from aiida_uranium_workflow.workflows.magmom.qe import QeMagmomWorkChain
+
+        import pathlib
+        import tempfile
+
+        computer = aiida_localhost
+        orm.InstalledCode(
+            label="qe_soc_test",
+            computer=computer,
+            filepath_executable="/bin/true",
+        ).store()
+
+        # A real (minimal) UpfData so the pw spec validation passes.
+        upf_text = (
+            "<UPF version=\"2.0.1\"><PP_HEADER element=\"U\" z_valence=\"14.0\"/>"
+            "<PP_MESH><PP_R><PP_R type=\"real\">1.0 2.0</PP_R></PP_R>"
+            "<PP_RAB><PP_RAB type=\"real\">1.0 2.0</PP_RAB></PP_RAB></PP_MESH>"
+            "<PP_NLCC><PP_NLCC type=\"real\">0.0 0.0</PP_NLCC></PP_NLCC>"
+            "<PP_LOCAL><PP_LOCAL type=\"real\">0.0 0.0</PP_LOCAL></PP_LOCAL>"
+            "<PP_NONLOCAL/>"
+            "<PP_PSWFC><PP_CHI type=\"real\" columns=\"2\">0.0 0.0</PP_CHI></PP_PSWFC>"
+            "</UPF>"
+        )
+        upf_path = pathlib.Path(tempfile.mkdtemp()) / "U.upf"
+        upf_path.write_text(upf_text, encoding="utf-8")
+        fake_upf = UpfData(upf_path)
+        fake_upf.store()
+
+        runner = get_manager().get_runner()
+        process = instantiate_process(
+            runner,
+            QeMagmomWorkChain,
+            pw={
+                "code": orm.load_code("qe_soc_test"),
+                "structure": orm.StructureData(ase=bulk("U", "bcc", a=3.45)),
+                "parameters": orm.Dict(dict={
+                    "CONTROL": {"calculation": "scf"},
+                    "SYSTEM": {"ecutwfc": 60, "noncolin": True, "lspinorb": True, "nspin": 1},
+                }),
+                "pseudos": {"U": fake_upf},
+            },
+            kpoints=orm.KpointsData(),
+            magmom_list=orm.List(list=[{
+                "U": 2.0, "angle1": {"U": 0.0},
+            }]),
+        )
+        # Stub submit to capture per-child parameters.
+        captured = {}
+
+        def fake_submit(cls, **inputs):
+            captured["parameters"] = inputs["pw"]["parameters"].get_dict()
+            return __import__("types").SimpleNamespace(pk=1)
+
+        monkeypatch.setattr(process, "submit", fake_submit)
+        monkeypatch.setattr(process, "to_context", lambda **kw: None)
+        process.submit_children()
+
+        system = captured["parameters"]["SYSTEM"]
+        assert system["nspin"] == 1  # SOC: preset value kept (not forced 2)
+        assert system["starting_magnetization"] == {"U": 2.0}
+        assert system["angle1"] == {"U": 0.0}

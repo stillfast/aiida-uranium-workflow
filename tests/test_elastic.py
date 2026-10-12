@@ -255,6 +255,8 @@ class TestElasticSchedulerPresetNames:
             "abacus": "scf",
             "vasp": "elastic",
             "fleur": "scf",
+            "qe": "scf",
         }
         assert "vasp" in ElasticWorkflowOrchestrator.ADAPTERS
-        assert "vasp" in ElasticWorkflowOrchestrator.BACKENDS
+        assert "qe" in ElasticWorkflowOrchestrator.ADAPTERS
+        assert "qe" in ElasticWorkflowOrchestrator.BACKENDS

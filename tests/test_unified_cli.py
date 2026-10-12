@@ -30,13 +30,13 @@ class TestMethodRegistry:
     def test_supported_methods(self):
         assert set(SUPPORTED_METHODS) == {
             "base", "smear", "convergence", "magmom", "banddos", "relax",
-            "elastic", "phonopy", "eos", "defects", "supercell",
+            "elastic", "elastic_cubic", "phonopy", "eos", "defects", "supercell",
         }
 
     @pytest.mark.parametrize(
         "method",
         ["base", "smear", "convergence", "magmom", "banddos", "relax",
-         "elastic", "phonopy", "eos", "defects", "supercell"],
+         "elastic", "elastic_cubic", "phonopy", "eos", "defects", "supercell"],
     )
     def test_get_method_spec_returns_valid_entry(self, method):
         spec = get_method_spec(method)
@@ -177,8 +177,8 @@ class TestMethodSpecBackendToKey:
     @pytest.mark.parametrize(
         "method",
         [m for m in METHOD_SPECS
-         if m not in ("banddos", "relax", "elastic", "phonopy", "eos", "defects",
-                      "supercell")],
+         if m not in ("banddos", "relax", "elastic", "elastic_cubic", "phonopy",
+                      "eos", "defects", "supercell")],
     )
     def test_backend_to_key_covers_abacus_and_vasp(self, method):
         spec = METHOD_SPECS[method]
@@ -195,22 +195,35 @@ class TestMethodSpecBackendToKey:
         assert "abacus" in spec.backend_to_key
         assert "vasp" not in spec.backend_to_key
 
-    def test_relax_has_abacus_and_fleur(self):
-        """relax covers abacus + fleur (no VASP)."""
+    def test_relax_has_abacus_fleur_and_qe(self):
+        """relax covers abacus + fleur (plugin relax WorkChains) and qe
+        (PwRelaxWorkChain), no VASP."""
         spec = METHOD_SPECS["relax"]
-        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert spec.backend_to_key == {
+            "abacus": "scf",
+            "fleur": "scf",
+            "qe": "scf",
+        }
         assert "vasp" not in spec.backend_to_key
 
-    def test_phonopy_only_has_abacus(self):
-        """phonopy covers abacus + fleur (no VASP)."""
+    def test_phonopy_has_abacus_fleur_and_qe(self):
+        """phonopy covers abacus + fleur + qe (no VASP)."""
         spec = METHOD_SPECS["phonopy"]
-        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert spec.backend_to_key == {
+            "abacus": "scf",
+            "fleur": "scf",
+            "qe": "scf",
+        }
         assert "vasp" not in spec.backend_to_key
 
-    def test_eos_has_abacus_and_fleur(self):
-        """eos covers abacus + fleur (no VASP)."""
+    def test_eos_has_abacus_fleur_and_qe(self):
+        """eos covers abacus + fleur + qe (no VASP)."""
         spec = METHOD_SPECS["eos"]
-        assert spec.backend_to_key == {"abacus": "scf", "fleur": "scf"}
+        assert spec.backend_to_key == {
+            "abacus": "scf",
+            "fleur": "scf",
+            "qe": "scf",
+        }
         assert "vasp" not in spec.backend_to_key
 
     def test_defects_has_abacus_and_fleur(self):
@@ -335,7 +348,7 @@ class TestCheckOutput:
     QE_MAGMOM_INPUT = {
         "workflow": "magmom",
         "parameters": {
-            "qe": {"magmom": ["test_u"]},
+            "qe": {"test": ["test_pseudo"]},
             "magmom": "test_u_afm_qe",
         },
         "static": {"structure": "gamma-uranium", "metadata": "yeesuan"},
@@ -360,10 +373,10 @@ class TestCheckOutput:
         assert rc == 0
         out = capsys.readouterr().out
         # Preset name + code, not the old '?@code:...' placeholder.
-        assert "[qe/test_u]" in out
+        assert "[qe/test_pseudo]" in out
         assert "qe@yeesuan" in out
         # Resolved SCF parameters reaching the WorkChain.
-        assert "ecutwfc" in out and "60" in out
+        assert "ecutwfc" in out and "150" in out
         assert "kpoints_mesh" in out
         assert "pseudo_family" in out
         # Parsed protocol (magmom sweep) + scheduler options.
@@ -375,7 +388,7 @@ class TestCheckOutput:
         """Multiple presets appear under their own header block."""
         payload = dict(self.QE_MAGMOM_INPUT)
         payload["parameters"] = {
-            "abacus": ["test", "test_soc"],
+            "abacus": {"scf": ["pw", "pw_r"]},
             "magmom": "test",
         }
         payload["code"] = {"abacus": "abacus@yeesuan"}
@@ -383,8 +396,8 @@ class TestCheckOutput:
         rc = main(["check", "-i", str(path)])
         assert rc == 0
         out = capsys.readouterr().out
-        assert "[abacus/test]" in out
-        assert "[abacus/test_soc]" in out
+        assert "[abacus/pw]" in out
+        assert "[abacus/pw_r]" in out
 
     def test_invalid_input_returns_nonzero(self, tmp_path, capsys):
         path = tmp_path / "input.json"
@@ -392,3 +405,87 @@ class TestCheckOutput:
         rc = main(["check", "-i", str(path)])
         assert rc != 0
         assert "invalid input" in capsys.readouterr().err
+
+
+class TestCheckOutputJson:
+    """``check`` on an output.json resolves every identifier and prints
+    the process call graph (the ``verdi process status`` tree)."""
+
+    OUTPUT_JSON = {
+        "workflow": "magmom",
+        "qe": {
+            "magmom": {
+                "test_pseudo": "04832920-e119-4079-880e-99b969dbf64f",
+                "test_pseudo_r": 12345,
+            }
+        },
+    }
+
+    def _write(self, tmp_path):
+        path = tmp_path / "output.json"
+        path.write_text(json.dumps(self.OUTPUT_JSON, indent=2))
+        return path
+
+    def test_looks_like_output_json(self):
+        from aiida_uranium_workflow.cli.main import _looks_like_output_json
+
+        assert _looks_like_output_json(self.OUTPUT_JSON) is True
+        # An input.json carries parameters/static/code — not an output map.
+        input_like = {
+            "workflow": "magmom",
+            "parameters": {"qe": {"test": ["test_u"]}},
+            "static": {"structure": "bcc-uranium"},
+            "code": {"qe": "qe@yeesuan"},
+        }
+        assert _looks_like_output_json(input_like) is False
+
+    def test_collect_identifiers(self):
+        from aiida_uranium_workflow.cli.main import _collect_process_identifiers
+
+        found = _collect_process_identifiers(self.OUTPUT_JSON)
+        assert found == [
+            (("qe", "magmom", "test_pseudo"), "04832920-e119-4079-880e-99b969dbf64f"),
+            (("qe", "magmom", "test_pseudo_r"), 12345),
+        ]
+
+    def test_status_of_running_and_finished(self, aiida_profile_clean, tmp_path, capsys):
+        """Finished processes exit 0; still-active ones exit 2."""
+        from aiida import orm
+        from aiida.engine import WorkChain, calcfunction
+        from aiida.engine.utils import instantiate_process
+        from aiida.manage.manager import get_manager
+        from aiida_uranium_workflow.cli import main as cli_main
+
+        runner = get_manager().get_runner()
+
+        @calcfunction
+        def _dummy():
+            return orm.Dict(dict={"ok": True})
+
+        finished = _dummy().creator  # the CalcFunctionNode itself
+        # A second, *not* finished process: instantiate a WorkChain that
+        # is left in the created state.
+        class _Created(WorkChain):
+            @classmethod
+            def define(cls, spec):
+                super().define(spec)
+                spec.outline(cls.done)
+
+            def done(self):
+                pass
+
+        created = instantiate_process(runner, _Created).node
+
+        payload = {
+            "workflow": "magmom",
+            "qe": {"magmom": {"done": finished.uuid, "created": created.uuid}},
+        }
+        path = tmp_path / "output.json"
+        path.write_text(json.dumps(payload))
+
+        rc = cli_main.main(["check", "-i", str(path)])  # pytest profile already loaded
+        out = capsys.readouterr().out
+        assert "=== qe/magmom/done" in out
+        assert "=== qe/magmom/created" in out
+        assert "finished=1" in out and "created=1" in out
+        assert rc == 2  # one process still active

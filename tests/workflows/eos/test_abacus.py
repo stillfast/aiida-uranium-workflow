@@ -79,6 +79,36 @@ def test_workchain_definition():
     assert hasattr(AbacusEosWorkChain.exit_codes, "ERROR_PARSER")
 
 
+def test_generate_structures_uses_volume_step(aiida_profile_clean):
+    """``step`` is a relative *volume* step: adjacent scan cells differ
+    by 1% in volume (lattice scale factor = (1+ΔV/V)^(1/3)), not 1% in
+    lattice constant."""
+    import numpy as np
+    from aiida.engine.utils import instantiate_process
+    from aiida.manage.manager import get_manager
+    from ase.build import bulk
+
+    structure = orm.StructureData(ase=bulk("U", "bcc", a=3.45, cubic=True))
+    runner = get_manager().get_runner()
+    process = instantiate_process(
+        runner,
+        AbacusEosWorkChain,
+        structure=structure,
+        base={},
+        eos_parameters=orm.Dict(dict={"points": 5, "step": 0.01, "guess": 1.00}),
+    )
+    process.generate_structures()
+
+    factors = [(1.01) ** i for i in range(-2, 3)]  # geometric ±1% volume
+    expected_scales = np.cbrt(factors)
+    np.testing.assert_allclose(process.ctx.scales, expected_scales, rtol=1e-12)
+
+    volumes = [s.get_cell_volume() for s in process.ctx.scaled_structures]
+    ratios = [v1 / v0 for v0, v1 in zip(volumes, volumes[1:])]
+    # consecutive volume ratios are exactly 1.01 (1% volume steps)
+    np.testing.assert_allclose(ratios, [1.01] * 4, rtol=1e-12)
+
+
 def test_collect_fit_reads_volume_from_abacus_namespace(aiida_profile_clean):
     """``collect_fit`` must read the volume from ``inputs.abacus.structure``
     (regression: ``inputs.structure`` raised AttributeError → the whole

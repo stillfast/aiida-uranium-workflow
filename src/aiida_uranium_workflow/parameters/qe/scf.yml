@@ -1,0 +1,55 @@
+pw:
+  pw:
+    parameters:
+      CONTROL:
+        calculation: scf
+      SYSTEM:
+        ecutwfc: 150        # Ry — SSSP U reference (overridden by family)
+        ecutrho: 900
+        degauss: 0.00735   # Ry = 0.1 eV — metallic smearing (mp)
+        occupations: smearing
+        smearing: mp
+        nspin: 1           # collinear; starting_magnetization injected per sweep entry
+      ELECTRONS:
+        conv_thr: 1.0e-6
+        mixing_beta: 0.4
+  kpoints_mesh: [11, 11, 11]
+  pseudo_family: sg15_sz
+
+pw_r:
+  pw:
+    parameters:
+      CONTROL:
+        calculation: scf
+      SYSTEM:
+        ecutwfc: 150        # Ry — SSSP U reference (overridden by family)
+        ecutrho: 900
+        degauss: 0.00735   # Ry = 0.1 eV — metallic smearing (mp)
+        occupations: smearing
+        smearing: mp
+        nspin: 1           # collinear; starting_magnetization injected per sweep entry
+      ELECTRONS:
+        conv_thr: 1.0e-6
+        mixing_beta: 0.4
+  kpoints_mesh: [11, 11, 11]
+  pseudo_family: sg15_soc_qe_pbe
+
+pw_r_soc:
+  pw:
+    parameters:
+      CONTROL:
+        calculation: scf
+      SYSTEM:
+        ecutwfc: 150        # Ry — SSSP U reference (overridden by family)
+        ecutrho: 900
+        degauss: 0.00735   # Ry = 0.1 eV — metallic smearing (mp)
+        occupations: smearing
+        smearing: mp
+        nspin: 1           # collinear; starting_magnetization injected per sweep entry
+        noncolin: True
+        lspinorb: True
+      ELECTRONS:
+        conv_thr: 1.0e-5
+        mixing_beta: 0.4
+  kpoints_mesh: [11, 11, 11]
+  pseudo_family: sg15_soc_qe_pbe

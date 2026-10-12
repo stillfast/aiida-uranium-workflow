@@ -4,6 +4,20 @@
 #   abacus:  relax_type=volume + force/stress cutoffs + meta-convergence
 #   fleur:   full relaxation (positions + cell) — the plugin has no
 #            volume-only mode
+#   qe:      PwRelaxWorkChain-level controls (meta_convergence /
+#            max_meta_convergence_iterations / clean_workdir) plus the
+#            relax-mode keys ``relax_type`` ('positions' default — ions
+#            move, cell fixed; 'volume' — vc-relax: for cubic /
+#            orthorhombic lattices the hydrostatic stress keeps the cell
+#            shape by symmetry so the converged cell is the volume-only
+#            result (QE only accepts the strictly shape-locked
+#            ``cell_dofree='volume'`` for ibrav=1 simple cubic);
+#            'full' — vc-relax with all cell degrees of freedom) and
+#            ``force_criterion`` (converged largest force in eV/Å → QE
+#            CONTROL.forc_conv_thr). An explicit ``cell_dofree`` may be
+#            given to lock specific cell degrees of freedom. The pw SCF
+#            base comes from the shared ``parameters/qe/scf.yml`` presets
+#            (``calculation`` is overridden by the protocol).
 #
 # The per-backend SCF base lives in the preset files under
 # ``parameters/abacus/scf.yml`` and ``parameters/fleur/scf.yml``.
@@ -51,6 +65,17 @@ test:
     run_final_scf: false     # run a final SCF on the relaxed structure?
     change_mixing_criterion: 0.025
 
+  qe:
+    # PwRelaxWorkChain controls — the pw SCF base comes from the shared
+    # parameters/qe/scf.yml presets; meta-convergence re-runs the
+    # relaxation until the structure stops changing. ``relax_type:
+    # volume`` = vc-relax (bcc-U: shape kept by symmetry, converged
+    # cell is the volume-only result); ``force_criterion`` 0.05 eV/Å.
+    meta_convergence: true
+    max_meta_convergence_iterations: 5
+    relax_type: volume
+    force_criterion: 0.05
+
 test_soc:
   abacus:
     relax_type: volume
@@ -71,6 +96,15 @@ test_soc:
     run_final_scf: false
     change_mixing_criterion: 0.025
 
+  qe:
+    # PwRelaxWorkChain controls — the pw relax parameters live in
+    # parameters/qe/relax.yml (calculation=relax, ions bfgs,
+    # force_conv_thr 1e-3 Ry/bohr). Meta-convergence re-runs the
+    # relaxation until the structure stops changing.
+    meta_convergence: true
+    max_meta_convergence_iterations: 5
+
+
 test_si:
   abacus:
     relax_type: volume
@@ -90,3 +124,19 @@ test_si:
     relax_iter: 10
     run_final_scf: false
     change_mixing_criterion: 0.025
+
+  qe:
+    # PwRelaxWorkChain controls — the pw relax parameters live in
+    # parameters/qe/relax.yml (calculation=relax, ions bfgs,
+    # force_conv_thr 1e-3 Ry/bohr). Meta-convergence re-runs the
+    # relaxation until the structure stops changing.
+    meta_convergence: true
+    max_meta_convergence_iterations: 5
+    # Only the cell volume is relaxed (vc-relax + cell_dofree=volume —
+    # for bcc-U without free internal coordinates this is a pure
+    # volume-only relax, the QE counterpart of abacus relax_type=volume).
+    relax_type: volume
+    # Converged largest force in eV/Å (→ QE IONS.force_conv_thr in
+    # Ry/bohr). 0.03 eV/Å ≈ 1.17e-3 Ry/bohr, matching the abacus /
+    # fleur force criteria.
+    force_criterion: 0.03

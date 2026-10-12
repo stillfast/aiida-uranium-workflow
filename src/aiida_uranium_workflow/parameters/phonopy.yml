@@ -1,9 +1,9 @@
 # Phonopy workflow protocol — phonopy-specific parameters only.
 #
-# The ABACUS SCF base (physical / SCF input parameters, k-points,
-# pseudopotentials) lives in ``parameters/abacus/scf.yml`` — the same
-# per-backend preset file shared with banddos / elastic / relax.  The
-# workflow's ``input.json`` selects both sides::
+# The per-backend SCF base (physical / SCF input parameters, k-points,
+# pseudopotentials) lives in ``parameters/<backend>/scf.yml`` — the same
+# per-backend preset file shared with banddos / elastic / relax / eos.
+# The workflow's ``input.json`` selects both sides::
 #
 #     {
 #       "workflow": "phonopy",
@@ -16,9 +16,24 @@
 #       "code": {"abacus": "abacus@yunhe", "phonopy": "phonopy@cloud"}
 #     }
 #
-# Each preset below is one phonopy run: frozen-phonon supercells are
-# computed with ABACUS (SCF + forces) and post-processed with phonopy
-# (band structure + DOS).
+# Two families of implementations share this protocol:
+#
+# * **ABACUS / FLEUR** — frozen-phonon: displaced supercells are computed
+#   with the SCF backend (forces) and post-processed with phonopy (band
+#   structure + DOS). The keys below the preset (supercell_matrix /
+#   primitive_matrix / band_mode / dos / ...) drive those backends.
+# * **QE** — no supercells and no phonopy code: the backend runs the
+#   aiida-qe **DFPT** chain (pw.x SCF → ``quantumespresso.ph.base`` →
+#   ``quantumespresso.q2r.base`` → ``quantumespresso.matdyn.base``) on
+#   the seekpath primitive cell. The QE-specific knobs live in the
+#   preset's ``qe`` sub-block (``qpoints_mesh`` / ph.x / q2r.x
+#   convergence); the band-path / DOS rendering settings above are
+#   shared. ``input.json`` needs three extra codes::
+#
+#       "code": {"qe": "pw@<host>", "ph": "ph@<host>",
+#                "q2r": "q2r@<host>", "matdyn": "matdyn@<host>"}
+#
+# Each preset below is one phonon run.
 
 test:
   # ---- phonopy pre-processing (frozen-phonon supercells) -----------------
@@ -71,6 +86,42 @@ test:
   # Scheduler options for the phonopy CalcJob (optional). Defaults:
   # 1 process, ``withmpi`` taken from the registered phonopy code.
   options: {}
+
+  # ---- QE backend (DFPT, no supercells / phonopy) ------------------------
+  # The QE phonon workflow runs pw.x SCF → ph.x → q2r.x → matdyn.x on the
+  # seekpath primitive cell of the input structure. ``band_mode`` /
+  # ``band_paths`` / ``dos`` / ``mesh`` above are shared: the band path
+  # is always seekpath-auto and the DOS uses the shared ``mesh`` when
+  # ``dos_mesh`` is not given below.
+  qe:
+    # Gamma-centred q-point mesh of the ph.x run (irreducible-q count is
+    # reduced by symmetry — bcc-U 4×4×4 → 10 irreps).
+    qpoints_mesh: [4, 4, 4]
+    # ph.x convergence (INPUTPH): values validated on yeesuan
+    # (test_qe_ph.py, QE 7.5) — tr2_ph 1e-12 + epsil=false converged in a
+    # few minutes for the test cell; asr=true pins the acoustic branches
+    # at Γ already at the ph.x level (q2r.x then reads ``zasr``, matdyn.x
+    # reads ``asr``). Tighten tr2_ph if a metal needs it.
+    ph:
+      INPUTPH:
+        tr2_ph: 1.0e-12
+        epsil: false
+        asr: true
+    # q2r.x INPUT overrides (fildyn / flfrc are managed by the plugin);
+    # the acoustic-sum rule keeps the Γ frequencies near zero. NOTE:
+    # q2r.x reads ``zasr`` (``asr`` is the matdyn.x variable — q2r.x
+    # aborts on unknown namelist keys).
+    q2r:
+      INPUT:
+        zasr: crystal
+    # matdyn.x INPUT overrides. The workflow forces ``asr='crystal'``
+    # (acoustic-sum rule at interpolation time, so the acoustic branches
+    # anchor at Γ = 0 — QE 7.5 matdyn reads ``asr``) and sets the ``dos``
+    # flag per run; a preset value here wins over the default asr.
+    matdyn: {}
+    # Total DOS from a second matdyn.x run on a dense q mesh.
+    dos: true
+    dos_mesh: [21, 21, 21]
 
 test_fleur:
   # FLEUR backend: same phonopy settings as ``test``, forces computed by

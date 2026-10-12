@@ -1,0 +1,59 @@
+# elastic_cubic workflow protocol — settings for the energy–strain cubic
+# elastic constants.
+#
+# The per-backend SCF base (physical / SCF parameters, k-points,
+# pseudopotentials) lives in ``parameters/abacus/scf.yml`` (or whichever
+# backend preset category you select). The workflow's ``input.json``
+# selects both sides::
+#
+#     {
+#       "workflow": "elastic_cubic",
+#       "parameters": {
+#         "abacus": {"scf": ["pw"]},   # ABACUS SCF preset
+#         "elastic_cubic": "test"      # protocol preset (this file)
+#       },
+#       "static": {"structure": "bcc-uranium-0K", "metadata": "yeesuan"},
+#       "profile": "aiida_profile",
+#       "code": {"abacus": "abacus@<HOST>"}
+#     }
+#
+# There are **no default equilibrium values**: a preset either carries an
+# explicit ``equilibrium`` block (B in GPa, V0 in Å³, E0 in eV — all
+# three together) or the WorkChain runs the EOS fallback and takes them
+# from the fitted Birch-Murnaghan curve. Fallback scan defaults:
+# ``points: 9, step: 0.01, guess: 1.00`` → ±4% volume window with 1%
+# relative volume steps (a narrower window makes B / B′ unreliable).
+#
+# ``crystal_system`` must stay "cubic" (the only supported family).
+# Only positive δ = 0.00…0.05 (6 values, textbook D_o / D_m distortions)
+# are used; ``relax_internal`` (default true) relaxes the internal atomic
+# coordinates under each distortion — required for multi-atom bases such
+# as diamond Si, a no-op for monoatomic bcc/fcc cells.
+#
+# NOTE on ``volume_gs``: when V0 is given (either directly or via the EOS
+# fit), the input structure is isotropically rescaled to exactly V0
+# before the distortions are applied — only the lattice is scaled, the
+# fractional coordinates are kept unchanged.
+
+test:
+  # No equilibrium block -> the WorkChain always runs the 7-point EOS
+  # fallback for B / V0 / E0.
+  crystal_system: cubic
+
+# ---------------------------------------------------------------------
+# To skip the EOS run, add your own preset with the three equilibrium
+# values (uncomment and fill in — do NOT keep placeholder zeros):
+#
+# with-equilibrium:
+#   crystal_system: cubic
+#   equilibrium:
+#     bulk_modulus: <B>      # GPa
+#     volume_gs: <V0>        # Å³
+#     energy_gs_ev: <E0>     # eV
+#   eos_parameters:          # optional; used only when equilibrium is absent
+#     points: 9
+#     step: 0.01             # relative volume step (1%)
+#     guess: 1.00
+#   relax_internal: true     # optional (default true)
+#   deltas: [0.00, 0.01, 0.02, 0.03, 0.04, 0.05]   # optional
+# ---------------------------------------------------------------------

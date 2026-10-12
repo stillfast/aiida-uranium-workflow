@@ -1,0 +1,573 @@
+# this is convergence
+pw:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz
+
+pw_r:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz_soc
+
+lcao:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz
+
+lcao_r:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+  kpoints_mesh: [9,9,9]
+  pseudo_family: sg15_sz_soc
+
+# this is smear 
+lcao:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+
+lcao_r:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz_soc
+
+pw:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+
+pw_r:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 2
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-7
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz_soc
+
+pw_Si:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 1
+        basis_type: pw
+        ecutwfc: 100
+        scf_thr: 1e-9
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+
+lcao_Si:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        nspin: 1
+        basis_type: lcao
+        ecutwfc: 100
+        scf_thr: 1e-9
+        smearing_method: gauss
+        smearing_sigma: 0.015
+        scf_nmax: 100
+        calculation: scf
+  kpoints_distance: 0.1 # the unit is A^-1
+  pseudo_family: sg15_sz
+# ---------------------------------------------------------------------------
+# Example: seed the SCF from a stored converged charge density via
+# ``abacus.extra_files`` (requires aiida-abacus with extra_files support).
+#
+#   * store the cube once:  SinglefileData(file="SPIN1_CHG.cube").store()
+#     (pk=379124 / uuid=92adda66-ab2e-4d88-8ed9-535881a51d36 for the
+#     2-atom bcc-U a=3.445 A cube in aiida-uranium-scripts/supercell/8_chg)
+#   * ``extra_files``: {label: pk-or-uuid}; the file is copied into the
+#     calc folder at ``<extra_files_basepath>/<node.filename>``, here
+#     ./chg/SPIN1_CHG.cube — which ``read_file_dir`` then points at.
+#   * run with workflow "base" and  parameters.abacus = {"test": "lcao_chg_file"}
+# ---------------------------------------------------------------------------
+lcao_chg_file:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-8
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 100
+        calculation: scf
+        init_chg: file          # read the charge density instead of atomic
+        read_file_dir: ./chg/   # where the cube lands (extra_files_basepath)
+    extra_files:
+      chg: 379124              # SinglefileData pk of SPIN1_CHG.cube
+    extra_files_basepath: chg
+  kpoints_mesh: [15, 15, 15]
+  pseudo_family: sg15_sz
+
+lcao_65Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+
+lcao_150Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+lcao_1q_nscf:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 50
+        calculation: nscf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        read_file_dir: ./
+        init_chg: file
+        nbands: 18023
+    extra_files:
+      # Only the SMALL 54^3 unit-cell template + the expander travel to
+      # AiiDA; the full 8x8x8 SPIN1_CHG.cube is produced on the cluster
+      # by the metadata preset's ``prepend_text`` (runs expand_cube.py
+      # in the calc folder with -o SPIN1_CHG.cube).
+      template: 379182        # SinglefileData pk of SPIN1_CHG_TEMPLATE.cube
+      script: 379125          # SinglefileData pk of expand_cube.py
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_nums:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        # scf_nmax is only a cap (ABACUS stops as soon as scf_thr is met):
+        # the bcc-U vacancy needs 60 steps at 249 atoms and 120-187 steps
+        # at 431 atoms, so 50 would abort them with "SCF not converged".
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+# lcao_nums + 震荡提前退出（ABACUS scf_os_stop，v3.5.0+；v3.10.0 已实测接受）。
+# 为什么不放在 supercell cell 里：WorkChain 的 _SCF_OVERRIDE_KEYS 白名单会
+# 在 daemon 里过滤 per-cell 覆盖，而 daemon 是长驻进程、加载的是旧模块；
+# scf preset 则在 CLI 进程里解析后整块传给 WorkChain，不受白名单影响。
+#
+# ★ 只给 ≥1024 原子的胞用。小/中胞（≤432 原子的空位生产算例）会误杀，见下。
+#
+# 标定依据：aiida-uranium-scripts/supercell/para_test/reports/scf_os_calibration.md
+#   逐字复现 Charge_Mixing::if_scf_oscillate，在 416 个真实算例（216 个"确实
+#   收敛" + 11 个 ≥1024 原子的真失败）上扫 (scf_os_ndim, scf_os_thr)。
+#
+#   关键结论：**≥1024 原子的已收敛算例，任何 (ndim, thr) 都误杀 0/45**，
+#   所有误杀都出在小/中胞。所以大胞上唯一要选的是"多早触发"：
+#     ndim=8  → 抓住 10/11 个大失败，中位 ELEC 9
+#     ndim=12 → 9/11，ELEC 12
+#     ndim=24 → 7/11，ELEC 24   ← 官方默认（=mixing_ndim），太晚
+#
+# 两个必须显式设置的坑：
+# 1) `scf_os_ndim` 默认 = `mixing_ndim`（read_input_item_elec_stru.cpp:670）。
+#    大胞用 mixing_ndim 24 ⇒ 最早 ELEC 24 才可能检查，而失败发生在 ELEC 4-5；
+#    4394 原子那次 8 步就死的算例**永远抓不到**。必须与 mixing_ndim 解耦、取小。
+# 2) `mixing_restart` 会把 `mixing_restart_last` 设为重启步号，而
+#    if_scf_oscillate 里 `iteration < scf_os_ndim + mixing_restart_last` 直接 return
+#    ⇒ 重启后又推迟 scf_os_ndim 步才开始检查（本例 ~4 步）。
+#
+# `scf_os_thr`：源码 `check_value` 强制**必须为负**（≥0 直接 WARNING_QUIT，
+# "scf_os_thr should be negative"），所以只能在 (-∞, 0) 里取；取官方默认 -0.01
+# 即可（在 ndim=8 上抓住率最好）。斜率 > -0.01 的含义是"每步降幅不足 2.3%"，
+# 这对慢收敛/平坦段偏激进 —— 这正是小胞误杀（本文 8.3%）的来源，也是本 preset
+# 不用于小胞的原因。
+lcao_nums_os:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        scf_os_stop: 1
+        scf_os_ndim: 8
+        scf_os_thr: -0.01
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+# NOTE: 本块原名 lcao_nums，与第 260 行的 lcao_nums 同名；PyYAML safe_load
+#       对重复 key 取**最后一个**，所以线上 lcao_nums 实际解析成 ecutwfc 100 /
+#       scf_nmax 15，而 384005 等全部历史算例用的是 ecutwfc 65 / scf_nmax 250。
+#       2026-09-21 改名为 lcao_nums_100Ry 以恢复原义。
+lcao_nums_100Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        # scf_nmax is only a cap (ABACUS stops as soon as scf_thr is met):
+        # the bcc-U vacancy needs 60 steps at 249 atoms and 120-187 steps
+        # at 431 atoms, so 50 would abort them with "SCF not converged".
+        scf_nmax: 15
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_nums_14ve:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_150Ry_sz
+
+lcao_nums_14ve_100Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 15
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        scf_os_stop: 1
+        scf_os_thr: -0.01
+        scf_os_ndim: 8
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_150Ry_sz
+
+lcao_nums_14ve_10au:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_10au
+
+lcao_nums_14ve_10au_100Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_10au
+
+lcao_nums_14ve_orb100Ry:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        scf_os_stop: 1
+        scf_os_thr: -0.01
+        scf_os_ndim: 8
+        mixing_gg0_min: 0.0
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_9au_100Ry
+# ---------------------------------------------------------------------------
+# Twisted graphene (carbin_test / abacus_twist_graphene) — the reference
+# CPU input of that repository, ``abacus_twist_graphene/INPUT_cpu``:
+#
+#   calculation scf | symmetry 0 | ecutwfc 100 | scf_thr 1e-6 | scf_nmax 50
+#   basis_type lcao | smearing gaussian sigma 0.02 | broyden beta 0.4
+#   cal_force 1 | cal_stress 1 | ks_solver genelpa | device cpu | gamma_only 1
+#
+# Every value below is that file's, with three deliberate differences:
+#
+# * ``suffix`` is dropped — aiida-abacus overwrites it with ``aiida``
+#   (OUT.aiida) in AbacusCalculation.write_input, so setting it here
+#   would be silently ignored.
+# * ``nspin: 1`` is made explicit (INPUT_cpu leaves it at the ABACUS
+#   default, which is also 1). Graphene is non-magnetic: no spin.
+# * ``nelec: 0.0`` is made explicit (0.0 = let ABACUS count the valence
+#   electrons) — the house style of the other presets here.
+#
+# ``pseudo_family: sg15_sz`` carries ``C_ONCV_PBE-1.0.upf`` — byte-identical
+# to the pseudopotential in the reference folder (md5 dd1f23aa…) — with the
+# 7 au ``C_gga_7au_100Ry_2s2p1d.orb`` instead of the reference's 8 au
+# orbital (same 2s2p1d configuration, smaller radial cutoff; no stored
+# family holds that exact pair).
+#
+# NOTE: ``ecutwfc 100`` is the PW cutoff of the LCAO two-centre integrals;
+# the ``100Ry`` inside the orbital filename is the cutoff used when the
+# orbital was *generated*, not a runtime setting.
+# ---------------------------------------------------------------------------
+
+lcao_twist:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-6
+        scf_nmax: 50
+        calculation: scf
+        gamma_only: 1
+        symmetry: 0
+        smearing_method: gaussian
+        smearing_sigma: 0.02
+        mixing_type: broyden
+        mixing_beta: 0.4
+        cal_force: 1
+        cal_stress: 1
+        ks_solver: genelpa
+        device: cpu
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_alpha:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 250
+        calculation: scf
+        gamma_only: 1
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        mixing_gg0_min: 0.0
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_14ve_9au_100Ry
+
+orbital_6d_f:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+  kpoints_mesh: [2,2,2]
+  pseudo_family: sg15_sz

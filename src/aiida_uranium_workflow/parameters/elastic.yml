@@ -61,6 +61,11 @@ test:
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
     relax_lattice: true
     relax_internal: true
+  qe:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_internal: true
+
   fleur:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
@@ -87,6 +92,11 @@ test_soc:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
     relax_lattice: true
+  qe:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_internal: true
+
   fleur:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
@@ -113,6 +123,11 @@ test_si:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
     relax_lattice: true
+  qe:
+    norm_strains: [-0.010, -0.005, 0.005, 0.010]
+    shear_strains: [-0.010, -0.005, 0.005, 0.010]
+    relax_internal: true
+
   fleur:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]

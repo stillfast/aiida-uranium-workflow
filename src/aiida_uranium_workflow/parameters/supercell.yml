@@ -14,8 +14,13 @@
 #   SCF keys   — optional overrides applied on top of the base preset
 #                (see workflows/supercell/abacus.py::_SCF_OVERRIDE_KEYS):
 #                kpoints_mesh / kpoints_distance, scf_thr, scf_nmax,
-#                mixing_beta, mixing_beta_mag, mixing_ndim,
-#                smearing_method, smearing_sigma, symmetry, ...
+#                mixing_beta, mixing_beta_mag, mixing_ndim, mixing_type,
+#                mixing_restart, mixing_dmr, mixing_gg0, smearing_method,
+#                smearing_sigma, symmetry, ...
+#                NOTE: a key that is not in that tuple is silently
+#                ignored (the cell then just re-runs the base preset) —
+#                check `aiida-uranium check -i input.json` output plus
+#                the child's INPUT before spending 4x 1024-atom runs.
 #
 # NOTE on restarts: the per-supercell AbacusBaseWorkChain is submitted
 # with ``max_iterations = 0`` (see workflows/supercell/abacus.py) — a
@@ -57,21 +62,6 @@ test:
       #   label: skew
       #   kpoints_distance: 0.1
       #   scf_thr: 1e-6
-
-test_soc:
-  abacus:
-    supercells:
-      - matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        label: 1x1x1
-        kpoints_mesh: [11, 11, 11]
-      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
-        label: 2x2x2
-        kpoints_mesh: [7, 7, 7]
-        scf_thr: 1e-6
-        mixing_beta: 0.2
-        mixing_beta_mag: 0.8
-        mixing_angle: 1.0
-        mixing_ndim: 12
 
 test333:
   abacus:
@@ -137,6 +127,13 @@ test888:
         mixing_ndim: 16
         symmetry: 0
 
+supercell_888:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8
+        mixing_ndim: 24
+
 test_sym:
   abacus:
     supercells:
@@ -145,14 +142,14 @@ test_sym:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.4
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
         label: 8x8x8_sym1      # ← 区分
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.4
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 1
 
 test_beta:
@@ -163,28 +160,28 @@ test_beta:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.3
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
         label: 8x8x8_beta0p4      # ← 区分
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.4
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
         label: 8x8x8_beta0p5
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.5
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
         label: 8x8x8_beta0p6
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.6
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
 
 test_ndim:
@@ -220,7 +217,7 @@ test_sigma:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.5
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
         smearing_sigma: 0.005
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
@@ -228,7 +225,7 @@ test_sigma:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.5
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
         smearing_sigma: 0.0073529411764706
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
@@ -236,7 +233,7 @@ test_sigma:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.5
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
         smearing_sigma: 0.015
       - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
@@ -244,25 +241,2757 @@ test_sigma:
         kpoints_mesh: [1, 1, 1]
         scf_thr: 1e-4
         mixing_beta: 0.5
-        mixing_ndim: 8
+        mixing_ndim: 24
         symmetry: 0
         smearing_sigma: 0.03
+
+test_gamma_only:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_gamma1
+        mixing_ndim: 24
+        gamma_only: 1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_gamma0
+        mixing_ndim: 24
+        gamma_only: 0
+
+test_solver:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scalapack
+        mixing_ndim: 24
+        ks_solver: scalapack_gvx
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_genelpa
+        mixing_ndim: 24
+        ks_solver: genelpa
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        mixing_ndim: 24
+        label: 8x8x8_elpa
+        ks_solver: elpa
+
+test_nbands:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_nbands1p05
+        mixing_ndim: 24
+        nbands: 17204
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_nbands1p1
+        mixing_ndim: 24
+        nbands: 18023
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_nbands1p15
+        mixing_ndim: 24
+        nbands: 18842
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        mixing_ndim: 24
+        label: 8x8x8_nbands1p2
+        nbands: 19661
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_nbands1p25
+        mixing_ndim: 24
+        nbands: 20480
+
+test_scf_thr:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scf_thr1e-3
+        mixing_ndim: 24
+        scf_thr: 1e-3
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scf_thr1e-4
+        mixing_ndim: 24
+        scf_thr: 1e-4
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scf_thr1e-5
+        mixing_ndim: 24
+        scf_thr: 1e-5
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scf_thr1e-6
+        mixing_ndim: 24
+        scf_thr: 1e-6
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_scf_thr1e-7
+        mixing_ndim: 24
+        scf_thr: 1e-7
+
+test_mixing_restart:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        mixing_ndim: 24
+        label: 8x8x8_mixing_restart_0
+        mixing_restart: 0
+        mixing_dmr: 1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_restart_1e-2
+        mixing_ndim: 24
+        mixing_restart: 1e-2
+        mixing_dmr: 1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_restart_1e-4
+        mixing_ndim: 24
+        mixing_restart: 1e-4
+        mixing_dmr: 1
+
+test_mixing_gg0:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_0
+        mixing_ndim: 24
+        mixing_gg0: 0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_1
+        mixing_ndim: 24
+        mixing_gg0: 1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_2
+        mixing_ndim: 24
+        mixing_gg0: 2
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_3
+        mixing_ndim: 24
+        mixing_gg0: 3
+
+test_mixing_gg0_min:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_min_0p0
+        mixing_gg0_min: 0.0
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_min_0p05
+        mixing_gg0_min: 0.05
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_min_0p1
+        mixing_gg0_min: 0.1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_mixing_gg0_min_0p2
+        mixing_gg0_min: 0.2
+
+test_ecutwfc:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_ecutwfc_65
+        ecutwfc: 65
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_ecutwfc_80
+        ecutwfc: 80
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_ecutwfc_100
+        ecutwfc: 100
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_ecutwfc_120
+        ecutwfc: 120
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8_ecutwfc_150
+        ecutwfc: 150
 
 test_1w:
   abacus:
     supercells:
-      # ~11.7k-atom LCAO SCF. genelpa/ELPA crashed after INIT SCF on
-      # multi-node runs (non-memory); ks_solver=cg_in_lcao (iterative
-      # LCAO solver) avoids the ELPA 2D-blocked diagonaliser entirely —
-      # slower per SCF step but robust. Remove ks_solver once genelpa is
-      # validated at this scale. NOTE: the LCAO solver keyword is
-      # ``cg_in_lcao`` (plain ``cg`` is the PW solver and ABACUS aborts).
+      # ~11.7k-atom LCAO SCF. gamma_only single-k LCAO only supports
+      # genelpa / elpa / scalapack_gvx in HSolverLCAO (cg / dav /
+      # cg_in_lcao are rejected at solve time — verified in
+      # hsolver_lcao.cpp). genelpa AND scalapack_gvx both died silently
+      # right after "DONE : INIT SCF" on 2×1.5 TB nodes — kernel OOM
+      # SIGKILL (exit 137, Intel MPI "KILLED BY SIGNAL: 9"), not a
+      # solver bug: the first dense diagonalisation needs ~3×N²×8 B ≈
+      # 2.2 TB+ on top of ~0.6–0.8 TB/node ABACUS arrays. Fix = scale
+      # out num_machines (see static/metadata.yml, yeesuan_ys_1w → 4
+      # nodes). Remove ks_solver once genelpa is validated at this scale.
       - matrix: [[18, 0, 0], [0, 18, 0], [0, 0, 18]]
+
+# ============================================================================
+# 【实测规则】大胞 SCF 的 mixing_ndim（2026-09-17，见
+#   aiida-uranium-scripts/supercell/para_test/99_scf_thr/para_test/reports/）
+#
+# 实测边界（1024/686/432/250 原子，genelpa，scf_thr 1e-5）：
+#   ≤ 432 原子：mixing_ndim 8（默认）完全够用 —— 与 24 **逐位相同**
+#   ≥ 686 原子：必须 ≥ 16，**推荐 24**
+#      686：ndim 8 发散（drho 触到 1.1e-5 后失稳）；16 = 32 步；**24 = 27 步**
+#      1024：ndim 8 发散；16 = 24 步；20/24 = **23 步**
+#   失稳形态：drho 先在 ~1e-4~1e-5 触底（甚至"看起来收敛"），随后反弹振荡到 1e-1。
+#   ⇒ 用 ndim 8 跑大胞，即使 `scf_thr 1e-4` 时靠"偶然低谷"提前停止，结果也不可靠。
+#
+# 无效/有害（同批实测，勿再试）：加强 Kerker（gg0 2/5 更差）、减小 mixing_beta、
+#   mixing_restart、加大 smearing_sigma、提高 nbands，以及它们的组合（过度阻尼）。
+# 缺陷胞另见 parameters/defects.yml（vacancy_nums 早已按尺寸递升 8/8/12/16/24/24/24），
+#   但 7x7x7/8x8x8 缺陷胞即便 ndim=24 仍卡在 1e-3~1e-2 ⇒ 需要热启动/换混合策略。
+# ============================================================================
+
+        mixing_ndim: 24
         label: 18x18x18
+        ks_solver: scalapack_gvx
+
+# ---------------------------------------------------------------------------
+# Smoke test for the 18³ (11,664-atom) scalapack_gvx path — do NOT run a
+# full 48 h job blind after the cg_in_lcao / genelpa failures. This entry
+# stops after ONE electronic step (scf_nmax=1), so the run only pays the
+# one-time INIT SCF (~40 min) + one H build + one dense diagonalization.
+# Read the per-step timing from OUT.aiida/running_scf.log and the memory
+# peak with `sacct -j <jobid> --format=JobID,Elapsed,MaxRSS,State`; then
+# bump scf_nmax back and set a realistic wallclock for the full SCF.
+# Expected terminal state: NOT converged (plugin exit 410) — that is the
+# intended outcome of the smoke run, only the timings/memory matter.
+# ---------------------------------------------------------------------------
+test_1w_smoke:
+  abacus:
+    supercells:
+      - matrix: [[18, 0, 0], [0, 18, 0], [0, 0, 18]]
+        label: 18x18x18_smoke
+        mixing_ndim: 24        # 大胞规则（见 test_nums 上方的实测说明）；本 cell 只跑 1 步，仅为一致性
+        ks_solver: scalapack_gvx
+        scf_nmax: 1
+
+test_nums_small:
+  abacus:
+    supercells:
+      - matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        label: 1x1x1
+      - matrix: [[2, 0, 0], [0, 1, 0], [0, 0, 2]]
+        label: 2x2x2
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: 5x5x5
+      - matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        label: 6x6x6
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8
+
+test_nums_alpha:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8
+
+test_nums:
+  abacus:
+    supercells:
+      - matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        label: 1x1x1
+      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        label: 2x2x2
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: 5x5x5
+      - matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        label: 6x6x6
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: 8x8x8
+        mixing_ndim: 24
+      - matrix: [[10, 0, 0], [0, 10, 0], [0, 0, 10]]
+        label: 10x10x10
+        mixing_ndim: 24
+      - matrix: [[11, 0, 0], [0, 11, 0], [0, 0, 11]]
+        label: 11x11x11
+        mixing_ndim: 24
+      - matrix: [[12, 0, 0], [0, 12, 0], [0, 0, 12]]
+        label: 12x12x12
+        mixing_ndim: 24
+      - matrix: [[13, 0, 0], [0, 13, 0], [0, 0, 13]]
+        label: 13x13x13
+        mixing_ndim: 24
+
+# ---------------------------------------------------------------------------
+# PEXSI scale scan: 1×1×1 → 4×4×4 with a Γ-only k-mesh and *identical*
+# SCF settings everywhere, so the wall-time / energy difference across
+# the cells shows the solver's size scaling. Pair it with
+# parameters/abacus/scf.yml → ``lcao_1q_pexsi`` (ks_solver pexsi) and
+# ``lcao_1q_fdref`` (the matched genelpa reference, same binary).
+# atom counts: 2 / 16 / 54 / 128.
+# ---------------------------------------------------------------------------
+
+pexsi_scan:
+  abacus:
+    supercells:
+      - matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        label: 1x1x1_2at
         kpoints_mesh: [1, 1, 1]
-        scf_thr: 1e-3
+      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        label: 2x2x2_16at
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_54at
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_128at
+        kpoints_mesh: [1, 1, 1]
+
+# ---------------------------------------------------------------------------
+# PEXSI scale scan, cells PEXSI can actually finish: 1×1×1 (2 atoms) and
+# 2×2×2 (16 atoms), Γ-only, identical settings everywhere (see
+# parameters/abacus/scf.yml → ``lcao_1q_pexsi`` / ``lcao_1q_fdref``). The
+# 3×3×3 (54-atom) and 4×4×4 (128-atom) cells are deliberately absent:
+# with this ABACUS build PEXSI's density is already inaccurate there —
+# starting from a converged genelpa density the energy drifts by 10+ eV
+# (harness: mag_diag/pexsi_step3/G2_54_genelpa_then_pexsi). ``pexsi_scan``
+# keeps the full 1–4 ladder for when PEXSI is rebuilt/fixed.
+# ---------------------------------------------------------------------------
+
+pexsi_scan_small:
+  abacus:
+    supercells:
+      - matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        label: 1x1x1_2at
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        label: 2x2x2_16at
+        kpoints_mesh: [1, 1, 1]
+
+# ===========================================================================
+# PEXSI verification steps (one knob per step, para_test style).
+# Every step keeps the SCF cell fixed (3×3×3 = 54 atoms unless noted) and
+# varies ONE PEXSI parameter, so the steps can be read in order:
+#   1_method -> 2_npole -> 3_delta_e -> 4_mu_bounds -> 5_temp -> 6_mixing
+#   -> 7_nproc_pole -> 99_acceptance
+# The base SCF preset is parameters/abacus/scf.yml -> lcao_1q_pexsi.
+# ===========================================================================
+
+# --- step 1: pexsi_method (1 contour integral / 2 Moussa / 3 AAA) ---------
+# The FIRST version of this step ran the three methods with ABACUS's default
+# mu bracket (∓10 Ry) and all three failed — but they failed for the *mu*
+# reason, not for their own, so the comparison was confounded and had to be
+# repeated.  The cells below therefore carry the mu fix (2.1-2.3 Ry, i.e.
+# the Fermi level found from a converged genelpa run) plus a threshold PEXSI
+# can actually reach, so that pexsi_method is the only variable.
+# Method 3 has no tabulated pole set above numPole 40 -> lowered here
+# (otherwise "getPole error." / SIGABRT, independent of everything else).
+pexsi_method:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_m1
+        kpoints_mesh: [1, 1, 1]
+        pexsi_method: 1
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_m2
+        kpoints_mesh: [1, 1, 1]
+        pexsi_method: 2
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_m3
+        kpoints_mesh: [1, 1, 1]
+        pexsi_method: 3
+
+# --- step 2: pexsi_npole (hard table caps) -------------------------------
+pexsi_npole:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_np20
+        kpoints_mesh: [1, 1, 1]
+        pexsi_npole: 20
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_np30
+        kpoints_mesh: [1, 1, 1]
+        pexsi_npole: 30
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_np40
+        kpoints_mesh: [1, 1, 1]
+        pexsi_npole: 40
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_np60
+        kpoints_mesh: [1, 1, 1]
+        pexsi_npole: 60         # > 61 for method 2 -> getPole error
+
+# --- step 3: pexsi_delta_e (spectral radius of S^-1 H, Ry) ---------------
+# ABACUS default 20; the exact H(Gamma) spectrum of the 54-atom cell spans
+# -21.46 .. +5.25 Ry (radius 26.7 Ry). NOTE: getPole returns the FIRST
+# tabulated entry with numPole >= req && beta >= req, and for method 2 at
+# numPole >= 60 only (60, beta=1.23e7) and (60, beta=4.44e7) exist, so all
+# of these requests land on the SAME pole set - that is the point of the step.
+pexsi_delta_e:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_de15
+        kpoints_mesh: [1, 1, 1]
+        pexsi_delta_e: 15
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_de20
+        kpoints_mesh: [1, 1, 1]
+        pexsi_delta_e: 20
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_de25
+        kpoints_mesh: [1, 1, 1]
+        pexsi_delta_e: 25
+
+# --- step 4: pexsi_mu_lower/upper  ★ the decisive knob -------------------
+# The mu search can only resolve mu to (upper - lower)/81 Ry; ABACUS's
+# default is ∓10 Ry -> 0.247 Ry = 3.4 eV. For the 54-atom cell mu = 2.2046 Ry
+# (from a converged genelpa run: occupations cross 2 -> 0 there).
+pexsi_mu_bounds:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_mu_wide      # ABACUS default
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: -10
+        pexsi_mu_upper: 10
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_mu_020
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_mu_010
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.15
+        pexsi_mu_upper: 2.25
+
+# --- step 5: pexsi_temp / smearing_sigma (Ry; must stay equal) -----------
+pexsi_temp:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_T0p1eV
+        kpoints_mesh: [1, 1, 1]
+        smearing_sigma: 0.0075
+        pexsi_temp: 0.0075
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_T0p2eV
+        kpoints_mesh: [1, 1, 1]
+        smearing_sigma: 0.015
+        pexsi_temp: 0.015
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_T0p3eV
+        kpoints_mesh: [1, 1, 1]
+        smearing_sigma: 0.0225
+        pexsi_temp: 0.0225
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_T0p5eV
+        kpoints_mesh: [1, 1, 1]
+        smearing_sigma: 0.0375
+        pexsi_temp: 0.0375
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_T0p8eV
+        kpoints_mesh: [1, 1, 1]
+        smearing_sigma: 0.06
+        pexsi_temp: 0.06
+
+# --- step 6: mixing_beta (PEXSI limit-cycles at 0.5, genelpa does not) ---
+pexsi_mixing:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_beta0p2
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.2
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_beta0p5
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_beta0p8
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.8
+
+# --- step 7: pexsi_nproc_pole (processes per pole; must divide 56) -------
+pexsi_nproc_pole:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_pole1
+        kpoints_mesh: [1, 1, 1]
+        pexsi_nproc_pole: 1
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_pole2
+        kpoints_mesh: [1, 1, 1]
+        pexsi_nproc_pole: 2
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_pole4
+        kpoints_mesh: [1, 1, 1]
+        pexsi_nproc_pole: 4
+
+pexsi_symm:
+  abacus:
+    supercells:
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_symm_1
+        kpoints_mesh: [1, 1, 1]
+        pexsi_symm: true
+      - matrix: [[4, 0, 0], [0, 4, 0], [0, 0, 4]]
+        label: 4x4x4_symm_0
+        kpoints_mesh: [1, 1, 1]
+        pexsi_symm: false
+
+# --- 99_acceptance: final PEXSI (mu-fixed) vs genelpa on the same 54-atom cell
+pexsi_acceptance:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_accept
+        kpoints_mesh: [1, 1, 1]
+        scf_thr: 1e-5
+        scf_nmax: 60
+
+# --- 10_energy: locate the ~831 eV PEXSI-vs-genelpa energy offset ---------
+# The method comparison (step 1, mu fixed) showed all three pole expansions
+# agree to 0.02 eV/atom yet all sit ~831 eV above the genelpa reference, so
+# the offset is method-independent.  This step keeps the cell, k-mesh, mu
+# bracket and SCF thresholds fixed and varies only the *density accuracy*
+# knobs, while the energy decomposition (E_band / E_one_elec / E_Hartree /
+# E_xc / E_Ewald / E_entropy / E_Fermi) is compared term by term against the
+# genelpa reference (99_acceptance/input_genelpa.json, same cell/settings).
+pexsi_energy:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_etr1e4        # baseline (preset value)
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_etr1e5        # tighter density-matrix tolerance
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+        pexsi_elec_thr: 1e-5
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mutr1e5       # tighter chemical-potential tolerance
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+        pexsi_mu_thr: 1e-5
+        scf_thr: 1e-5
+        scf_nmax: 60
+
+# --- 4_mu_bounds (width scan): the mu bracket IS the knob ----------------
+# PEXSI's mu search resolves mu only to (upper - lower)/81 Ry, so the width
+# of the bracket -- not its accuracy knobs -- sets the charge error.
+# True mu of this cell: 2.2046 Ry (LAPACK on the same H/S; ABACUS's own
+# genelpa run prints E_Fermi = 29.9953 eV = 2.2046 Ry).  The last cell is a
+# tight-but-misplaced bracket: it shows that resolution alone is not enough.
+pexsi_mu_scan:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_w10      # ABACUS default, grid 247 mRy
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: -10
+        pexsi_mu_upper: 10
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_w05      # ±0.5 Ry, grid 12.3 mRy
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 1.7
+        pexsi_mu_upper: 2.7
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_w025     # ±0.25 Ry, grid 6.2 mRy
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 1.95
+        pexsi_mu_upper: 2.45
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_w01      # ±0.10 Ry, grid 2.5 mRy
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_w005     # ±0.05 Ry, grid 1.2 mRy
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.15
+        pexsi_mu_upper: 2.25
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_mu_wrong    # narrow but around the wrong place
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.5
+        pexsi_mu_upper: 2.7
+        scf_thr: 1e-5
+        scf_nmax: 60
+
+# --- 4_mu_bounds (centre scan): centre the bracket on the true mu --------
+# The width scan showed the SCF energy is not monotone in the bracket width:
+# [1.95,2.45] landed 2.8 eV from genelpa while [2.1,2.3] was 831 eV off,
+# although both are centred on 2.2.  The matrix-level test then showed why
+# the *centre* is what matters: a bracket centred exactly on the true
+# mu (2.2046 Ry) is returned as-is (mu error 5e-6 Ry, charge error 0.016
+# electrons, DM error 3.5e-5), whereas a bracket centred at 2.2 keeps that
+# 4.6 mRy offset.  These cells centre the bracket on 2.2046 with three
+# widths, plus a repeat of the width-scan winner as a reproducibility check.
+pexsi_mu_centre:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_c_005        # ±0.05 centred on the truth
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1546
+        pexsi_mu_upper: 2.2546
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_c_01         # ±0.10 centred on the truth
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 2.1046
+        pexsi_mu_upper: 2.3046
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_c_025        # ±0.25 centred on the truth
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 1.9546
+        pexsi_mu_upper: 2.4546
+        scf_thr: 1e-5
+        scf_nmax: 60
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_c_repeat     # width-scan winner, reproducibility
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 1.95
+        pexsi_mu_upper: 2.45
+        scf_thr: 1e-5
+        scf_nmax: 60
+
+# --- 11_density: is the 0.38 eV case the *same solution* as genelpa? -------
+# Same 54-atom cell, same basis/k-mesh/smearing/thresholds, out_chg "1 10";
+# one cell per solver, so the converged charge densities can be diffed point
+# by point (Out.<suffix>/chg.cube).  The PEXSI cell carries the best mu
+# bracket found in 4_mu_bounds (centre on the true mu, width 0.5 Ry) — the
+# cell whose total energy is 0.38 eV from genelpa.
+pexsi_density:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_dens_genelpa
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        scf_thr: 1e-5
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_dens_pexsi
+        kpoints_mesh: [1, 1, 1]
+        pexsi_mu_lower: 1.9546
+        pexsi_mu_upper: 2.4546
+        scf_thr: 1e-5
+        scf_nmax: 100
+
+# ============================================================================
+# PEXSI 参数优化（54 原子 bcc U，Gamma-only，scf_thr 1e-6）
+# 用法：scf preset 用 `lcao_1q_pexsi`（scf_thr 1e-6 / scf_nmax 100 / symmetry 0 /
+# pexsi_method 2 / npole 60 / nproc_pole 2 / elec_thr 1e-4 / mu_thr 1e-3 / delta_e 20），
+# 每个 cell 相对 base 只改一个参数（与 abacus.md 10.2.x 的写法一致）。
+# base = ks_solver pexsi, mixing_beta 0.5, pexsi_nproc_pole 8, pexsi_npole 60,
+#        pexsi_nmax 10（库内自洽求 mu 的迭代上限）
+# 注意：mu 现在由 PEXSI 自己解（库补丁），这些 cell 都不给 pexsi_mu_lower/upper。
+# ============================================================================
+pexsi_opt1:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_genelpa_050      # 参照：genelpa + mixing 0.5（不在 PEXSI 扫描链上）
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_base             # PEXSI 基线
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_mix02            # 单变量：mixing_beta 0.2
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.2
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_nproc2           # 单变量：nproc_pole 2
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 2
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_nproc28          # 单变量：nproc_pole 28
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_npole40          # 单变量：npole 40
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 8
+        pexsi_npole: 40
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_npole30          # 单变量：npole 30（看精度边界）
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 8
+        pexsi_npole: 30
+        pexsi_nmax: 10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt1_nmax2            # 单变量：mu 迭代上限 2
+        kpoints_mesh: [1, 1, 1]
+        mixing_beta: 0.5
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 2a：pexsi_npole 标定（54 原子，scf_thr 1e-6）
+# 背景：批 1 发现 npole=40 与 genelpa 差 0.009 meV/atom，而 npole=60 差 7.07 meV/atom
+# —— 因为 getPole 的硬编码极点表是按 (method, numPole, beta=deltaE/T) 查表的，
+# 请求不同的 npole 会落到**不同的极点表项**，不是"越多越准"。
+# 本批扫描 method 2 表的合法档位 4..61 中的代表值，找出与 genelpa 一致且最快的取值。
+# 参照：opt1_genelpa_050（genelpa + mixing 0.5，−13532.568233 eV/atom）
+# ============================================================================
+pexsi_opt2a:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole20
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 20
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole24
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 24
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole28
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 28
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole32
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 32
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole36
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 36
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole40
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole44
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 44
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole48
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 48
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole52
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 52
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole56
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 56
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2a_npole61
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 61
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 2b：PEXSI 参数"单变量"扫描（每个 cell 只改一个参数）
+#
+# 基线 = 批 2a 的最优点（npole 40，ΔE = +0.011 meV/atom vs genelpa）：
+#   ks_solver pexsi / pexsi_method 2 / pexsi_npole 40 / pexsi_nproc_pole 8 /
+#   pexsi_nmax 10 / pexsi_delta_e 20 / pexsi_elec_thr 1e-4 /
+#   pexsi_mu_thr 1e-3 / pexsi_zero_thr 1e-10 / mixing_beta 0.5 /
+#   scf_thr 1e-6 / scf_nmax 100 / symmetry 0 / Γ-only
+#   温度：σ 与 pexsi_temp 均取 scf preset `lcao_1q_pexsi` 的
+#   0.0073529411764706 Ry（= 0.1 eV）—— 除 opt2b_sig0.2 两个 cell。
+#
+# ABACUS 默认值（source/source_io/module_parameter/input_parameter.h:597 起）：
+#   npole 40 / inertia true / nmax 80 / comm true / storage true / ordering 0 /
+#   row_ordering 1 / nproc 1 / symm true / trans false / method 1 /
+#   nproc_pole 1 / temp 0.015 Ry / gap 0 / delta_e 20 / mu_lower −10 /
+#   mu_upper 10 / mu 0 / mu_thr 0.05 / mu_expand 0.3 / mu_guard 0.2 /
+#   elec_thr 1e-3 / zero_thr 1e-10
+#
+# 2a 只扫 npole（结论：36–44 最优，取 40）。2b 固定 npole 40，逐个扫其余影响
+# **精度/语义**的开关；opt2b_muwin / opt2b_muinit 专测"μ 由 PEXSI 自己求"
+# （窄窗口、显式初值都不该改变结果）；opt2b_sig0.2Gen 是 σ=0.2 eV 时 PEXSI
+# 的 genelpa 参考（σ 变了就是另一套物理，不能拿 0.1 eV 的参考值比）。
+# 用法：scf preset 用 `lcao_1q_pexsi`，supercell preset 用 `pexsi_opt2b`。
+# ============================================================================
+pexsi_opt2b:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_ref
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_method1
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 1
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_method3
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 3
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_de10
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 10
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_de48
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 48
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_elec1e-3
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-3
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_elec1e-5
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-5
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_mut0.05
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 0.05
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_mut1e-5
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-5
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_zt0
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 0
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_zt1e-8
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-8
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_nmax2
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 2
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_nmax5
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 5
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_temp0.015
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_temp: 0.015
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_symm0
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_symm: 0
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_inertia0
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_inertia: 0
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_muwin
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_mu_lower: 1.5
+        pexsi_mu_upper: 2.5
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_muinit
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_mu: 2.2
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_sig0.2
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        smearing_sigma: 0.0147058823529412
+        pexsi_temp: 0.0147058823529412
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2b_sig0.2Gen
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        smearing_sigma: 0.0147058823529412
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 2c：pexsi_nmax 阈值 + SelInv 性能开关（54 原子，基线同批 2b）
+#
+# 批 2b 结论：nmax 2 / 5 → exit 302（100 步不收敛，末步 EDIFF 84 / 6.3），
+# nmax 10 正常 ⇒ 本批二分 6/8/12/20 找最小可用值。注意修复后驱动内部的
+# μ 自洽求解上限是 min(maxPEXSIIter, 10)，所以 >10 的 nmax 预期与 10 等价
+# （若确实等价，说明 nmax ≥ 10 即可，不必加大）。
+#
+# SelInv 性能开关（只影响时间/内存，不该影响能量）：
+#   pexsi_ordering     0 PARMETIS(默认) / 1 METIS_AT_PLUS_A / 2 MMD_AT_PLUS_A / 3 NATURAL
+#                      —— src/ppexsi.cpp:3973 switch(ordering)；3 文档标注“显著更贵”，不测
+#   pexsi_row_ordering 1(默认) → 0
+#   pexsi_trans        false(默认) → true（转置版 selected inversion，时间不同）
+#   pexsi_comm         true(默认) → false（不建通信模式：每步重建，可能更慢但省内存）
+#   pexsi_storage      映射到 options.symmetricStorage（默认 true = 只存三角，省内存）
+# ============================================================================
+pexsi_opt2c:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_ref
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_nmax6
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 6
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_nmax8
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 8
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_nmax12
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 12
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_nmax20
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 20
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_ord1
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 1
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_ord2
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_roword0
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_row_ordering: 0
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_trans1
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_trans: 1
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt2c_comm0
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_comm: 0
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 3a：54 原子"最优组合"收尾 + genelpa 终检
+# 组合来自批 2a/2b/2c：method 2、npole 40、nmax 10、delta_e 20、
+# elec_thr 1e-4、mu_thr 1e-3、zero_thr 1e-10、temp = smearing_sigma = 0.1 eV、
+# mixing 0.5 / ndim 8、symmetry 0、Γ-only、scf_thr 1e-6。
+# final_genelpa 是与 final_pexsi **同一套参数**的 genelpa 参考（mixing 0.5）；
+# final_pexsi_alt 是 method 3(AAA) 变体，用于确认两个 method 都可交付。
+# 用途：作为冻结进 preset 前的最终验收表。
+# ============================================================================
+pexsi_final:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: final_genelpa
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
         mixing_beta: 0.5
         mixing_ndim: 8
-        symmetry: 0
-        smearing_sigma: 0.015
-        ks_solver: cg_in_lcao
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: final_pexsi
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: final_pexsi_alt
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 3b：250 原子（5×5×5）大体系标定 —— 回答"54 原子标定出的 npole 40 能否外推"
+#
+# 动机：pexsi_npole 的最优值来自 getPole 的硬编码极点表按 (method, numPole,
+# beta = deltaE/T) 查表，beta 依赖体系；54 原子体系是 40 最好，250 原子未必。
+# 本批用 genelpa 作参考，比较 npole 40 / 60（method 2）、method 3 + npole 40，
+# 以及批 2c 发现可能快 ~16% 的 pexsi_ordering 2（MMD_AT_PLUS_A）在大体系是否复现。
+#
+# 成本/内存（实测）：genelpa 250 原子 ≈ 58 s/步、27 GB；PEXSI 250 原子在
+# npole 56–60 下约 640–929 s/步。**注意队列内存上限**：yeesuan_ys_24h（d2_ys）
+# 没有 max_memory_kb ⇒ 继承 computer 默认 47.7 GB 的 --mem，PEXSI 250 原子
+# （np=8 时实测 81 GB）会被 cgroup OOM 杀掉，所以本批用 yeesuan_190g
+# （q_ysuan，185 GB，12 h；q_ysuan 无分区时限）。pexsi_nproc_pole 8 整除 56。
+# ============================================================================
+pexsi_scale250:
+  abacus:
+    supercells:
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_genelpa
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_np40
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_np60
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 60
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_m3np40
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_np40_ord2
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 4a：PEXSI 提速的两条便宜路线（54 原子，基线 = 批 2c/3a 的 `pexsi_final`）
+#
+# 背景：250 原子下 PEXSI 整个 SCF 6412 s vs genelpa 174 s（37 倍；54 原子 6 倍）。
+# ABACUS 计时显示 98 % 的时间在 `Diago_LCAO_Matrix PEXSIDFT`，即整个 simplePEXSI
+# 调用；PEXSI 内部的分阶段计时被 ABACUS 硬编码关掉了
+#（simple_pexsi.cpp `int_para[15] = 0` ⇒ options.verbosity = 0），所以先试
+# **不需要重编**的两个杠杆：
+#
+#  A. `pexsi_zero_thr`（ZERO_Limit）：H/S 压缩存储(CCS)时丢弃 |H_ij| < ZERO_Limit
+#     的元素。SelInv 的代价 ∝ 因子非零元个数，矩阵越稀疏越快。默认 1e-10。
+#     这是唯一没扫过的“直接影响矩阵规模”的参数；代价是丢弃元素带来的误差，
+#     所以必须和 genelpa 比能量。
+#  B. 更少的极点：npole 直接乘在 SelInv 波数上（nproc_pole 8 ⇒ 40 极点 = 5 波，
+#     60 极点 = 8 波，实测耗时比 1.58 倍）。method 2 在 npole 36 已达标
+#     (+0.011 meV/atom)，但 **method 3(AAA) 的极点表只有 10/15/16/22/25/30/35/40**，
+#     如果 AAA 在 22 极点就够准，就是直接的 ~1.8 倍提速。
+# ============================================================================
+pexsi_opt4a:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_ref
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_zt1e-8
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-8
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_zt1e-6
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-6
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_zt1e-5
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-5
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_zt1e-4
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-4
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_npole32
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 32
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_npole36
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 36
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_m3np22
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_m3np25
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 25
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_m3np30
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 30
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4a_m3np35
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 35
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 0.0001
+        pexsi_mu_thr: 0.001
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 4b：250 原子 / 4 节点并行标度测试（回答“堆节点能不能救 PEXSI”）
+#
+# 1 节点 56 ranks 实测：npole 40 + nproc_pole 8 → 570 s/步（5 波极点，每波 7 ranks），
+# 整个 SCF 6412 s；genelpa 同体系整个 SCF 174 s。
+# 本批用 yeesuan_ys_1w（d2_ys，4 节点 / 224 ranks / 每节点 1.5 TB / 48 h）跑同一体系，
+# 分别取 nproc_pole 8（28 ranks/波，5 波）与 28（8 ranks/波，2 波）：
+#   * np=8 快 ⇒ SelInv 对「每波 rank 数」的强标度好，堆节点有效；
+#   * np=28 快 ⇒ 真正的收益来自「更多极点同时算」，与 rank 数无关；
+#   * 两者都差不多 ⇒ 56 ranks 已经饱和，堆节点无用，只能减极点或换算法。
+# 注意：d2_ys 的 metadata 必须显式给 max_memory_kb，否则继承 47.7 GB 默认值
+# 会把 PEXSI（np=8 时实测 81 GB）OOM 掉；yeesuan_ys_1w 已设 1.5 TB/节点。
+# ============================================================================
+pexsi_scale250_4n:
+  abacus:
+    supercells:
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_4n_np8
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+        pexsi_nproc_pole: 8
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_4n_np28
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+        pexsi_nproc_pole: 28
+
+# ============================================================================
+# 批 4c：AAA(method 3) 极点数下界 + 250 原子验证
+#
+# 批 4a 结果（54 原子，参考 genelpa −730758.685 eV）：
+#   method 3 + npole 22 → ΔE = +0.000 meV/atom，133 s（基线 method2/npole40 = 198–248 s）
+#                        ⇒ 少 45 % 时间，且与 genelpa 逐位相同
+#   method 3 + npole 30 / 35 → 同样 +0.000（172 / 184 s）
+#   method 3 + npole 25 → **崩**（E = −1.2e6 eV，100 步不收敛，exit 302）
+#        ⇒ 极点表里 (method 3, numPole 25, 本 beta) 这一项不可用：**合法 numPole
+#          不等于可用 numPole**，每换一个 npole 都必须与 genelpa 对能量。
+#   pexsi_zero_thr 1e-8/1e-6/1e-5 → 时间无收益（183/190/178 s vs 198 s）；
+#       1e-4 → 能量坏掉（−3.0 meV/atom）⇒ 稀疏化这条路无效，放弃。
+#
+# 本批 A（54 原子）：找 AAA 真正的下界——npole 10/15/16 是否也能保证精度。
+# ============================================================================
+pexsi_opt4c:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4c_m3np22
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4c_m3np10
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 10
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4c_m3np15
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 15
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4c_m3np16
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 16
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4c_m3np40
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 40
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 批 4d：250 原子验证（参考 = 批 3b 的 genelpa −3383192.84 eV，同 σ/mixing/scf_thr）
+#   * method 3 + npole 22：若在 250 原子同样精确，250 原子 SCF 从 6412 s
+#     （method2/npole40/56 ranks）降到 ~3500 s；
+#   * method 3 + npole 30：22 若失效时的稳妥回退；
+#   * method 2 + npole 36：method 2 的下界（54 原子 +0.011）。
+# ============================================================================
+pexsi_scale250_m3:
+  abacus:
+    supercells:
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_m3np22
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_m3np30
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 30
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: scale250_np36m2
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 36
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+
+# ============================================================================
+# 热启动验证 + 收敛密度生成
+#   * `chg_genelpa`：3×3×3 与 5×5×5 两个 cell，genelpa + out_chg "1 10"，
+#     取回 chg.cube 供下一步当 PEXSI 的初值（scf preset `lcao_1q_genelpa_chg`）。
+#   * `pexsi_warmstart`：54 原子 PEXSI 从**已收敛的 genelpa 密度**出发
+#     （scf preset `lcao_1q_pexsi_warm`，cube = SinglefileData pk 384743）。
+#     对照（冷启动、同参数 = method 3 + npole 22）：批 4c `opt4c_m3np22`，
+#     9 步 / 136 s / ΔE +0.000 meV/atom。
+#     预期：步数降到 1–2 步，时间近似成比例下降；同时若第一步就落在收敛能量上，
+#     就证明 `scf.yml` 里那条"PEXSI 密度/能量本身不准"（G2 test）的历史结论
+#     只是 μ bug 的产物。
+# ============================================================================
+chg_genelpa:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: chg54_genelpa
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: chg250_genelpa
+        kpoints_mesh: [1, 1, 1]
+
+pexsi_warmstart:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: ws54_pexsi_warm
+        kpoints_mesh: [1, 1, 1]
+
+# ============================================================================
+# 批 4e：scf_thr 放到 PEXSI 密度噪声之上（54 原子，method 3 + npole 22）
+#
+# 动机：批 4c 的冷启动是 9 步；热启动（用收敛的 genelpa 密度当初值）仍然是
+# **7 步**。看 running_scf.log 就明白为什么：热启动第一步的 μ 已经是
+# 2.20461 Ry、能量已经是收敛值，但 **drho 在第 1 步就是 8.99e-6、第 2 步 2.28e-5**
+# —— PEXSI 密度的本底噪声约 1e-5，而 `scf_thr 1e-6` 要求 drho/ediff 低于 1e-6，
+# 于是 SCF 只能继续迭代到能量稳定为止（7 步）。
+#
+# 所以真正决定步数的是 **scf_thr 与 PEXSI 密度噪声的相对位置**。
+# 本批测 scf_thr 1e-6 / 1e-5 / 1e-4 的步数与能量：
+#   * 若 1e-5 就把步数压到 2–3 步且能量不变（PEXSI 噪声本来就 >>1e-5，
+#     收紧 scf_thr 只是在追逐噪声），这就是又一个 2–3 倍的干净提速。
+# ============================================================================
+pexsi_opt4e:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4e_ref
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-6
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4e_thr1e-5
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-5
+        scf_nmax: 100
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: opt4e_thr1e-4
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-4
+        scf_nmax: 100
+
+# ============================================================================
+# 批 4f：250 原子"生产配方"终检（4 节点 = yeesuan_ys_1w，224 ranks）
+#
+# 把已验证的三个杠杆叠在一起，实测 250 原子的最终时间：
+#   1) method 3 + npole 30（54 与 250 原子都 ΔE = +0.000；npole 22 在 250 原子
+#      是 −0.040 meV/atom，作为"快一点但有偏差"的对照放在第 2 个 cell）
+#   2) nproc_pole 28（4 节点实测 2092 s vs np8 2174 s，取 28）
+#   3) scf_thr 1e-4（批 4e 实测 54 原子：1e-6 → 9 步/136 s，1e-5 → 9 步（无变化），
+#      **1e-4 → 6 步/89 s（−35 %）且能量不变**。注意判据实际压在 drho 上：
+#      PEXSI 密度噪声 ~1e-5，scf_thr 1e-5 仍要 9 步，1e-4 才提前停。
+#      用户的生产 preset `lcao_nums` 本来就用 scf_thr 1e-4。）
+#   第 3 个 cell 用旧的 method 2 + npole 40 配 scf_thr 1e-4，用来单独量 scf_thr
+#   在 250 原子的效果（同配置 scf_thr 1e-6 = 2092 s 已有实测）。
+#
+# 参考：genelpa 同体系 1 节点 174 s（12 步）；PEXSI 起点（method 2 + npole 40 +
+# 1 节点 + scf_thr 1e-6）= 6412 s。
+# ============================================================================
+pexsi_final250:
+  abacus:
+    supercells:
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: f250_m3np30_thr1e-4
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 30
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-4
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: f250_m3np22_thr1e-4
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-4
+        scf_nmax: 100
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: f250_m2np40_thr1e-4
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 2
+        pexsi_npole: 40
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        scf_thr: 1e-4
+        scf_nmax: 100
+
+# ============================================================================
+# 批 5：1024 原子（8×8×8）genelpa vs PEXSI 时间对照
+#
+# 用户要求：除 PEXSI 专有参数外，其余 SCF 参数完全相同。
+#   Γ-only、sg15_sz、ecutwfc 65、σ = 0.1 eV (fd)、mixing 0.5/8、symmetry 0、
+#   scf_thr 1e-4（= 生产 preset `lcao_nums` 的口径）、scf_nmax 60。
+# PEXSI 侧用已标定的最优组合：method 3 (AAA) + npole 30（54/250 原子都
+# ΔE = +0.000）+ nproc_pole 28（448 ranks ⇒ 16 ranks/极点组，30 极点 = 2 波）
+# + ordering 2。
+#
+# 两种对照：
+#   * `step` cells（scf_nmax 1）：单步时间，最干净的可比量（ladder 的做法）
+#   * `scf`  cells（scf_nmax 60）：完整 SCF 时间
+# 参考（13_scale_ladder 实测，1 节点 56 ranks，旧 npole 60）：genelpa 1024 原子
+#   334 s/步、92.1 GB；PEXSI 1024 原子在 8 节点/224 ranks 下 >77 min 未完成一步。
+#   本批 PEXSI 用 8 节点/448 ranks + 已标定参数（npole 30 而非 60）。
+# 提交时分两批（metadata 不同）：genelpa → `yeesuan_190g`（1 节点 / q_ysuan）；
+#   PEXSI → `yeesuan_8n_384`（8 节点 / q_ysuan_384，384 GB 每节点）。
+# ============================================================================
+# 提交时分两批（metadata 不同，见各自 input）：
+#   genelpa → `cmp1024_genelpa` + metadata `yeesuan_190g`（1 节点 / q_ysuan）
+#   PEXSI   → `cmp1024_pexsi`   + metadata `yeesuan_8n_384`（8 节点 / q_ysuan_384）
+cmp1024_genelpa:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: c1024_genelpa_step
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-4
+        scf_nmax: 1
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: c1024_genelpa_scf
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-4
+        scf_nmax: 60
+
+cmp1024_pexsi:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: c1024_pexsi_step
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-4
+        scf_nmax: 1
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 30
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: c1024_pexsi_scf
+        kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        scf_thr: 1e-4
+        scf_nmax: 60
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 30
+        pexsi_nproc_pole: 28
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+
+# ============================================================================
+# 批 6：432 原子（6×6×6）genelpa vs PEXSI 时间对照
+#
+# 与批 5（1024 原子）完全同一套口径，只把超胞从 8×8×8 换成 6×6×6：
+#   Γ-only、sg15_sz、ecutwfc 65、σ = 0.1 eV (fd)、mixing 0.5/8、symmetry 0、
+#   scf_thr 1e-4、scf_nmax 60；PEXSI 侧 method 3 + npole 30 + nproc_pole 28
+#   + nmax 10 + delta_e 20 + elec_thr 1e-4 + mu_thr 1e-3 + zero_thr 1e-10 + ordering 2。
+# 每个 solver 两个 cell：`step`（scf_nmax 1，量单步）与 `scf`（完整 SCF）。
+# 提交：genelpa → `cmp432_genelpa` + metadata `yeesuan_190g`（1 节点 / q_ysuan）
+#       PEXSI   → `cmp432_pexsi`   + metadata `yeesuan_4n_384`（4 节点 / q_ysuan_384）
+# 参考（13_scale_ladder，旧 npole 60 / 1 节点）：432 原子 PEXSI 单步 42–61 min；
+#   （外推）genelpa 432 原子单步 ~90–130 s、内存 ~35 GB。
+# ============================================================================
+cmp432_genelpa:
+  abacus:
+    supercells:
+      - kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        label: c432_genelpa_step
+        matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        scf_nmax: 1
+        scf_thr: 1e-4
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+      - kpoints_mesh: [1, 1, 1]
+        ks_solver: genelpa
+        label: c432_genelpa_scf
+        matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        scf_nmax: 60
+        scf_thr: 1e-4
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+
+cmp432_pexsi:
+  abacus:
+    supercells:
+      - kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        label: c432_pexsi_step
+        matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_method: 3
+        pexsi_mu_thr: 1e-3
+        pexsi_nmax: 10
+        pexsi_npole: 30
+        pexsi_nproc_pole: 28
+        pexsi_ordering: 2
+        pexsi_temp: 0.0073529411764706
+        pexsi_zero_thr: 1e-10
+        scf_nmax: 1
+        scf_thr: 1e-4
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+      - kpoints_mesh: [1, 1, 1]
+        ks_solver: pexsi
+        label: c432_pexsi_scf
+        matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_method: 3
+        pexsi_mu_thr: 1e-3
+        pexsi_nmax: 10
+        pexsi_npole: 30
+        pexsi_nproc_pole: 28
+        pexsi_ordering: 2
+        pexsi_temp: 0.0073529411764706
+        pexsi_zero_thr: 1e-10
+        scf_nmax: 60
+        scf_thr: 1e-4
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+
+# ============================================================================
+# 大超胞（≥2662 原子）—— 用 yeesuan_ys_fat1（d2_ys，1 节点，显式 1.5 TB）
+#
+# 只包含 num_test 阶梯里至今没有结果的四个 cell（10/11/12/13×13×13）。
+# 参数与 `test_nums` 完全一致（scf preset 仍是 `lcao_nums`：genelpa、
+# scf_thr 1e-4、scf_nmax 250、smearing mp σ=0.015），只把 metadata 换成要内存的。
+#
+# 时间预估（由实测 1024 原子 186 s/步、2000 原子 1070 s/步拟合 NLOCAL^2.6）：
+#   11x11x11 (2662, NLOCAL 69 212)  ~37 min/步 -> 3.8-6.9 h（6-11 步）
+#   12x12x12 (3456, NLOCAL 89 856)  ~69 min/步 -> 6.9-12.6 h
+#   13x13x13 (4394, NLOCAL 114 244) ~2.1 h/步  -> 12.6-23 h
+# 内存预估（按体积线性，标定于 2000 原子 ≈ 48 GB 的临界行为）：
+#   2662 ~60-80 GB、3456 ~90-120 GB、4394 ~130-180 GB —— 都远小于节点的 1.5 TB。
+# ============================================================================
+test_nums_big:
+  abacus:
+    supercells:
+      - matrix: [[10, 0, 0], [0, 10, 0], [0, 0, 10]]
+        label: 10x10x10
+        mixing_ndim: 24
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[11, 0, 0], [0, 11, 0], [0, 0, 11]]
+        label: 11x11x11
+        mixing_ndim: 24
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[12, 0, 0], [0, 12, 0], [0, 0, 12]]
+        label: 12x12x12
+        mixing_ndim: 24
+        kpoints_mesh: [1, 1, 1]
+      - matrix: [[13, 0, 0], [0, 13, 0], [0, 0, 13]]
+        label: 13x13x13
+        mixing_ndim: 24
+        kpoints_mesh: [1, 1, 1]
+
+# ============================================================================
+# 冒烟测试：`pexsi_symm` 的布尔值能不能一路走到 ABACUS
+# 目的：验证 supercell preset 里的 `pexsi_symm: true / false`（YAML 布尔）
+#   ① 是否在 `_SCF_OVERRIDE_KEYS` 白名单内（代码：workflows/supercell/abacus.py:111 ✓）
+#   ② aiida-abacus 用 f"{key:<30}{value}" 写 INPUT，Python str(True) = "True"
+#   ③ ABACUS 的 assume_as_boolean() 会先 FmtCore::lower()，接受
+#      true/1/t/yes/y/on 与 false/0/f/no/n/off  ⇒ "True"/"False" 合法
+# 16 原子 + 1 步就能验证机制（比 128 原子便宜 8 倍）。
+# ============================================================================
+pexsi_symm_smoke:
+  abacus:
+    supercells:
+      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        label: 2x2x2_symm_true
+        kpoints_mesh: [1, 1, 1]
+        pexsi_symm: true
+        scf_nmax: 3
+      - matrix: [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        label: 2x2x2_symm_false
+        kpoints_mesh: [1, 1, 1]
+        pexsi_symm: false
+        scf_nmax: 3
+
+# 15_dm_purification：只跑一个 3x3x3（54 原子）来导出 H、S、DM 参考
+purif_dump_333:
+  abacus:
+    supercells:
+      - matrix: [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+        label: 3x3x3_dump
+        kpoints_mesh: [1, 1, 1]
+
+# ============================================================================
+# 99_scf_thr/para_test：1024 原子 SCF 收敛性参数测试
+# 背景：`test_scf_thr` 里 scf_thr 1e-5 与 1e-6 的轨迹逐位相同且都在 50 步内发散
+#   （drho 触底 ~1e-4 后反弹 → 第 50 步 drho 2e-2、dE +55 eV）⇒ 不是阈值问题，
+#   是混合失稳 + LCAO 密度噪声底。本批固定 scf_thr 1e-5，逐个改混合/展宽/能带数，
+#   看谁能真正把 drho 压到 <1e-5。
+# 共同：8x8x8 (1024 原子)、Γ-only、sg15_sz、ecutwfc 65、genelpa、scf_nmax 80
+#   （原 50 太短）、smearing mp。scf preset = `lcao_1q`。
+# 提交：metadata `yeesuan_190g`（q_ysuan，1 节点 185 GB，12 h），code `abacus_lts@yeesuan`。
+# 判据：drho 单调降到 <1e-5 并保持 = 成功；全部压不下去 = LCAO 噪声底，1e-4 即实际下限。
+# ============================================================================
+test_scf_conv:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_baseline
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_gg0_2
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        mixing_gg0: 2
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_gg0_5
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        mixing_gg0: 5
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_ndim24
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 24
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_restart001
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        mixing_restart: 0.01
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_beta02
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.2
+        mixing_ndim: 8
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_sigma03
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        smearing_sigma: 0.0220588235294118
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_nbands12
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        nbands: 19661
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: p_combo
+        scf_thr: 1e-5
+        scf_nmax: 80
+        mixing_beta: 0.2
+        mixing_ndim: 24
+        mixing_gg0: 5
+        mixing_restart: 0.01
+
+# ============================================================================
+# 99_scf_thr/para_test 第二批：mixing_ndim 的边界 + scf_thr 能到多低
+# 第一批结论（pk 385874，1024 原子，scf_thr 1e-5）：**只有 mixing_ndim 8→24 能收敛**
+#   （23 步、drho 单调降到 8.8e-6、exit 0、E/atom 与阶梯参考一致）；
+#   加强 Kerker（gg0 2/5）反而更差，减 β / 加 restart / 加展宽 / 加 nbands 都无效，
+#   组合（gg0 5+ndim 24+restart+β0.2）虽然不散但收敛极慢。
+# 本批：① 找 ndim 的下界与趋势（16/32）；② 探 scf_thr 的真实下限（1e-6/1e-7）；
+#   ③ ndim 24 下加一点 Kerker 是否减少步数；④ ndim 40 是否对 1e-6 必要。
+# 其余参数同第一批：8x8x8、Γ-only、sg15_sz、ecutwfc 65、genelpa、mp σ=0.015、
+#   β=0.5、gg0 默认 1.0、nbands 18023、scf_nmax 100（给足空间）。
+# ============================================================================
+test_scf_conv2:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim16
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 24
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim32
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 24
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim24_thr1e-6
+        scf_thr: 1e-6
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 24
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim24_thr1e-7
+        scf_thr: 1e-7
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 24
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim24_gg0_2
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 24
+        mixing_gg0: 2
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: q_ndim40_thr1e-6
+        scf_thr: 1e-6
+        scf_nmax: 100
+        mixing_beta: 0.5
+        mixing_ndim: 40
+
+# ============================================================================
+# 99_scf_thr/para_test 第三批：mixing_ndim 的下界 + 尺寸依赖
+# 第二批（pk 386436）结论：ndim 24 下 scf_thr 1e-5/1e-6/1e-7 **全部收敛**
+#   （drho 8.8e-6 / 5.0e-7 / 7.5e-8，23/29/45 步），且总能差只有 0.003 meV/atom。
+#   （第二批里的 q_ndim16/q_ndim32 因我漏传 mixing_ndim，实际都是 24 —— 那两格
+#   变成了重复性检验：结果逐位一致，说明跑批确定性良好。）
+# 本批目的：
+#   1) 1024 原子上找 ndim 的最小可用值（8 失败、24 成功 ⇒ 二分 16/20）；
+#   2) **尺寸依赖**：250 与 432 原子上 ndim 8（默认）是否够用 ⇒ 定出"从多大胞开始
+#      必须调大 mixing_ndim"。这是给生产 preset 用的判据。
+# 其余参数同前：Γ-only、sg15_sz、ecutwfc 65、genelpa、mp σ=0.015、β=0.5、gg0 默认。
+#   nbands 按各尺寸取 1.1×占据数（1024→18023、432→7603、250→4400）。
+# ============================================================================
+test_scf_conv3:
+  abacus:
+    supercells:
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: r_1024_ndim16
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 18023
+        mixing_ndim: 16
+      - matrix: [[8, 0, 0], [0, 8, 0], [0, 0, 8]]
+        label: r_1024_ndim20
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 18023
+        mixing_ndim: 20
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: r_250_ndim8
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 4400
+        mixing_ndim: 8
+      - matrix: [[5, 0, 0], [0, 5, 0], [0, 0, 5]]
+        label: r_250_ndim24
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 4400
+        mixing_ndim: 24
+      - matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        label: r_432_ndim8
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 7603
+        mixing_ndim: 8
+      - matrix: [[6, 0, 0], [0, 6, 0], [0, 0, 6]]
+        label: r_432_ndim24
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 7603
+        mixing_ndim: 24
+
+# ============================================================================
+# 99_scf_thr/para_test 第四批：把 mixing_ndim 的尺寸分界点钉在 686 原子（7x7x7）
+# 已知：250/432 原子用默认 ndim 8 完全正常（与 24 逐位相同）；1024 原子 ndim 8 发散、
+#   16/20/24 收敛。⇒ 分界在 432~1024 之间，而生产里有 7x7x7 = 686 原子的缺陷体系。
+# 本批：686 原子，ndim 8 / 16 / 24，scf_thr 1e-5，nbands = 1.1 x 10976 = 12074。
+# ============================================================================
+test_scf_conv4:
+  abacus:
+    supercells:
+      - matrix: [[7, 0, 0], [0, 7, 0], [0, 0, 7]]
+        label: s_686_ndim8
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 12074
+        mixing_ndim: 8
+      - matrix: [[7, 0, 0], [0, 7, 0], [0, 0, 7]]
+        label: s_686_ndim16
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 12074
+        mixing_ndim: 16
+      - matrix: [[7, 0, 0], [0, 7, 0], [0, 0, 7]]
+        label: s_686_ndim24
+        scf_thr: 1e-5
+        scf_nmax: 100
+        mixing_beta: 0.5
+        nbands: 12074
+        mixing_ndim: 24
+
+# ============================================================================
+# 11x11x11（2662 原子）收敛验证 —— 对照 num_test/AbacusCalculation-384005
+#
+# 384005 的实测：genelpa、scf_thr 1e-4、scf_nmax 250、**mixing_ndim 8**、
+#   mp σ=0.015 Ry，2250 s/步；drho 在 GE4 从 3.6e-3 反弹到 2.1e-2，之后振荡并
+#   发散（GE38 时 dE=+2e5 eV），38 步后撞 24 h wallclock，无结果。
+# 本 preset 只改两处（其余与 lcao_nums 完全一致）：
+#   mixing_ndim 8 -> 24  （实测规则：>=686 原子必须 >=16，推荐 24）
+#   scf_nmax   250 -> 60 （避免再撞 wallclock；预计 11-20 步收敛）
+# 提交：metadata `yeesuan_1n_384`（1 节点 / q_ysuan_384 / 380 GB / 48 h）求稳；
+#       另投一份 `yeesuan_4n_384`（4 节点 / 224 ranks）测 genelpa 的多节点加速比。
+# ============================================================================
+conv_11x11x11:
+  abacus:
+    supercells:
+      - matrix: [[11, 0, 0], [0, 11, 0], [0, 0, 11]]
+        label: v11x11x11_ndim24
+        scf_thr: 1e-4
+        scf_nmax: 60
+        mixing_ndim: 24
+        mixing_beta: 0.5
+        scf_os_stop: 1          # 震荡即提前退出：384005 会在 ELEC~6 停，省 ~20 h
+
+# ============================================================================
+# 11x11x11（2662 原子）—— 只换"机理"，不调参数（唯一一个算例）
+#
+# 依据：416 个历史算例的逐步 drho 统计，见
+#   aiida-uranium-scripts/supercell/para_test/reports/scf_failure_anatomy.md
+#   所有 >=1024 原子的算例都在 ELEC 4-5 出现 drho 反弹（中位 6 倍）；
+#   1024 原子能恢复（42/43），>=2662 原子 0/5 恢复并数值爆炸（ELEC4 dE=+381 eV）。
+#   反弹处正是 Broyden 历史第一次凑够 >=3 个向量、第一次真正外推的位置，
+#   而这段历史全部来自线性暂态（前 3 步在 1024 与 2662 上几乎逐位相同）。
+#
+# mixing_restart 的源码语义（esolver_ks.cpp:379）：
+#   drho <= mixing_restart 时，下一步清空混合历史、直接用输出密度当输入
+#   = 暂态一结束就把垃圾历史扔掉，正是第 4 步那件事。
+# 1e-2 比所有尺寸的反弹前 drho（1024: 9.1e-4 / 2000: 6.6e-4 / 2662: 3.6e-3）都大
+#   => 在 ELEC 3->4 之间触发，是尺寸无关的常数。
+#
+# 历史教训：此前 4 个 mixing_restart 算例全部同时开了 mixing_dmr 1（DFT+U/EXX 的
+# 另一个机制），结论混在一起无法判断 —— 本 preset 只开 mixing_restart。
+#
+# 判据：scf_thr 1e-4 下 drho 不反弹地降到 <1e-4、exit 0、能量 ~ -13532.7 eV/atom。
+# ============================================================================
+conv_11x11x11_restart:
+  abacus:
+    supercells:
+      - matrix: [[11, 0, 0], [0, 11, 0], [0, 0, 11]]
+        label: v11x11x11_restart1e-2
+        scf_thr: 1e-4
+        scf_nmax: 60
+        mixing_ndim: 24
+        mixing_beta: 0.5
+        mixing_restart: 1e-2
+        # 震荡保险的标定见 para_test/reports/scf_os_calibration.md：
+        # scf_os_ndim 默认 = mixing_ndim = 24 ⇒ 最早 ELEC 24 才可能检查，
+        # 再叠加 mixing_restart 推迟 (scf_os_ndim + mixing_restart_last)，实际要
+        # ELEC≈28 才通电；而失败发生在 ELEC 4-5。故必须显式取小。
+        # 实测：≥1024 原子的已收敛算例在任何 (ndim, thr) 下误杀都是 0/45；
+        # ndim 8 能抓住 10/11 个大失败（中位 ELEC 9），ndim 24 只抓 7/11。
+        # 阈值必须为负（源码强制），沿用官方默认 -0.01。
+        scf_os_stop: 1
+        scf_os_ndim: 8
+        scf_os_thr: -0.01

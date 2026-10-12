@@ -9,7 +9,7 @@ pw_r:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
   kpoints_mesh:
   - 11
@@ -27,7 +27,7 @@ pw_r_soc:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
         lspinorb: true
         noncolin: true
@@ -58,7 +58,7 @@ lcao_r:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
   kpoints_mesh:
   - 11
@@ -77,7 +77,7 @@ lcao_r_soc_past:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
         lspinorb: true
         noncolin: true
@@ -106,7 +106,7 @@ lcao_r_soc:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
         lspinorb: true
         noncolin: true
@@ -136,7 +136,7 @@ lcao_r_phonopy:
         basis_type: lcao
         ecutwfc: 65
         scf_thr: 1e-7
-        scf_nmax: 100
+        scf_nmax: 50
         mixing_beta: 0.4
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
@@ -155,7 +155,7 @@ dzp_r_soc:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
         lspinorb: true
         noncolin: true
@@ -187,7 +187,7 @@ tzdp_r_soc:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
         lspinorb: true
         noncolin: true
@@ -219,9 +219,309 @@ lcao:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
   kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+
+lcao_chg:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-10
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+        out_chg: "1 10"
+    setting: 
+      additional_retrieve_list: 
+        - "SPIN1_CHG.cube"
+  kpoints_mesh: [15,15,15]
+  pseudo_family: sg15_sz
+
+lcao_1q:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 100
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 15
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        nbands: 18023
+        mixing_gg0_min: 0.0
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_1q_chg:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 50
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        read_file_dir: ./
+        init_chg: file
+        nbands: 18023
+    extra_files:
+      # Only the SMALL 54^3 unit-cell template + the expander travel to
+      # AiiDA; the full 8x8x8 SPIN1_CHG.cube is produced on the cluster
+      # by the metadata preset's ``prepend_text`` (runs expand_cube.py
+      # in the calc folder with -o SPIN1_CHG.cube).
+      template: 379182        # SinglefileData pk of SPIN1_CHG_TEMPLATE.cube
+      script: 379125          # SinglefileData pk of expand_cube.py
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+
+lcao_1w:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-3
+        smearing_method: mp
+        smearing_sigma: 0.015
+        scf_nmax: 50
+        calculation: scf
+        gamma_only: 1
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        symmetry: 0
+        out_chg: -1
+        ks_solver: genelpa
+        nbands: 205287
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+
+# ---------------------------------------------------------------------------
+# PEXSI (Pole Expansion + Selected Inversion) — LCAO Γ-only, no eigenvalues.
+#
+# What was measured on 2026-09-11 (bcc U, sg15_sz, ecutwfc 65, 56 ranks,
+# Γ-only, code abacus_pexsi@yeesuan = abacus-develop-3.9.0.25 built with
+# PEXSI v2.0.0 + SuperLU_DIST 7.2.0, harness mag_diag/pexsi_step3):
+#
+#   2 atoms   genelpa      converged,  7 steps            −27073.1889 eV
+#   2 atoms   pexsi β0.5   converged, 40 steps            −27073.2448 eV
+#   16 atoms  genelpa      converged, 12 steps            −216518.2098 eV
+#   16 atoms  pexsi β0.5   NOT converged (100 steps, −216514.63)
+#   16 atoms  pexsi β0.2   converged, 17 steps            −216518.2094 eV
+#                          → 0.022 meV/atom from genelpa ✓
+#   54 atoms  genelpa      converged, 10 steps            −730758.68 eV
+#   54 atoms  pexsi        NOT converged in 60–100 steps, for every
+#                          combination tried: β 0.1/0.2/0.4, broyden vs
+#                          plain, npole 60/100, σ 0.1/0.2 eV, μ_thr
+#                          1e-3/1e-5, elec_thr 1e-4/1e-5, symmetry 0/1.
+#                          drho floors at ~1e-2 and E wanders by 10+ eV.
+#   54 atoms  pexsi from the *converged genelpa density* (init_chg file,
+#                          G2 test): drho 6.7e-3 at the first step and
+#                          E drifting −730767.5 → −730781.7 → −730775.1
+#                          eV ⇒ the PEXSI density/energy itself is
+#                          inaccurate at this size, the SCF iteration is
+#                          not the culprit.
+#   128 atoms genelpa      converged, 25 steps, 140 s (5.6 s/step)
+#   128 atoms pexsi        ~60–75 s per SCF step (≈10× genelpa) and needs
+#                          more steps; it also OOM-killed under AiiDA's
+#                          default 47.7 GB job memory (see the
+#                          ``yeesuan_190g`` metadata preset).
+#
+# ⇒ This preset is safe up to a 2×2×2 (16-atom) cell; do NOT use PEXSI
+#   for the Γ-only metallic supercells this project actually needs
+#   (54–1024 atoms) with this build. The pole count is not the limiter
+#   (npole 60 ≡ 100), the PEXSI/SuperLU_DIST pair is the prime suspect —
+#   re-run the G2 acceptance test after any rebuild.
+#
+# Rules encoded below:
+#   * PEXSI only supports LCAO + Γ (``gamma_only 1``, 1×1×1 k-mesh).
+#   * ``mixing_beta 0.2``: 0.5 sends the PEXSI SCF into a limit cycle
+#     (the 16-atom cell then never converges, while the same cell with a
+#     diagonaliser converges at 0.5 in 12 steps).
+#   * ``pexsi_temp`` is in Ry and is the temperature of the pole
+#     expansion's Fermi–Dirac occupation, so it is kept numerically equal
+#     to ``smearing_sigma`` (also Ry) and both sides of a comparison use
+#     ``smearing_method fd`` — otherwise the occupation schemes differ and
+#     the energy difference is not the solver's. 0.015 Ry (0.2 eV) is the
+#     project's standard Γ-only value.
+#   * PEXSI returns the density matrix directly: no eigenvalues, no
+#     E_Fermi (ABACUS prints ``E_Fermi 0.0``), hence no bands/DOS.
+#   * ``scf_thr 1e-6`` is what the 2- and 16-atom cells reach; on bigger
+#     cells PEXSI cannot even reach 1e-2 (see above).
+#   * nbands is left to ABACUS (auto = 1.2 × occupied); PEXSI does not
+#     diagonalise, the matched genelpa reference gets the same value.
+# ---------------------------------------------------------------------------
+
+lcao_pexsi:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-4
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: pexsi
+        symmetry: 0
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        out_chg: -1
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_npole: 30
+        pexsi_nproc_pole: 7
+        pexsi_elec_thr: 1e-3
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_method: 2
+        pexsi_delta_e: 20
+        pexsi_ordering: 2
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_1q_pexsi_chg:
+  # lcao_1q_pexsi + write and retrieve the converged charge density, for the
+  # density-comparison step (11_density): ABACUS writes OUT.<suffix>/chg.cube
+  # for nspin=1 with out_chg "1 10", and aiida-abacus prefixes every
+  # additional_retrieve_list entry with OUT.<suffix>/.
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-5
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: pexsi
+        symmetry: 0
+        mixing_beta: 0.2
+        mixing_ndim: 8
+        out_chg: "1 10"
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_npole: 60
+        pexsi_nproc_pole: 2
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_method: 2
+        pexsi_delta_e: 20
+    setting:
+      additional_retrieve_list:
+        - "chg.cube"
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_1q_pexsi_mu:
+  # ⚠️ 已废弃（2026-09-16，PEXSI 库修好之后）——保留仅供复现历史对照。
+  # 下面的"窄 μ 窗口"是靠缩小窗口把 μ 钉到接近 Fermi 能级的 workaround，
+  # 前提是驱动**不会自己求 μ**。libpexsi 打过补丁（`PPEXSIDFTDriver2` 在
+  # numShift == 1 时用割线法自洽解 μ，见 pexsi_v2.0.0 提交 0b400b0）之后，
+  # 窗口/初值都不再影响结果：批 2b 实测把窗口收紧到 ±0.5 Ry
+  #（`opt2b_muwin`）、显式给 `pexsi_mu`（`opt2b_muinit`）、关掉惯性计数
+  #（`opt2b_inertia0`）三种做法与默认 ∓10 Ry **逐位相同**（都 +0.011 meV/atom）。
+  # 因此新计算请直接用 `lcao_1q_pexsi`（npole 40 / method 2 / nproc_pole 8 /
+  # ordering 2），不要再用本 preset。
+  # 历史说明（修复前）：窗口决定 μ 的分辨率 = (upper − lower)/81 Ry，
+  # ABACUS 默认 ∓10 Ry 只有 0.247 Ry = 3.4 eV；54 原子 bcc-U
+  #（sg15_sz, ecutwfc 65, σ = 0.1 eV，μ = 2.2046 Ry）用默认窗口时密度矩阵
+  # 只装下 1728 个电子中的 1495 个（少 13 %），SCF 无法闭合；收到 ±0.1 Ry
+  # 后误差降到 15 个电子、SCF 45 步收敛。
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-5
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: pexsi
+        symmetry: 0
+        mixing_beta: 0.2
+        mixing_ndim: 8
+        out_chg: -1
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_npole: 60
+        pexsi_nproc_pole: 2
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_method: 2
+        pexsi_delta_e: 20
+        pexsi_mu_lower: 2.1
+        pexsi_mu_upper: 2.3
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_1q_fdref:
+  # Matched genelpa reference for lcao_1q_pexsi: every numerical input is
+  # identical (same ecutwfc / thresholds / Γ mesh / fd smearing) except
+  # ks_solver and ``mixing_beta`` — PEXSI needs the heavy damping (0.2)
+  # where genelpa converges at 0.5 in 12 steps, and the converged energy
+  # is insensitive to it (measured at 16 atoms: 0.022 meV/atom between
+  # β 0.2 and β 0.5). Run it with the SAME code node
+  # (abacus_pexsi@yeesuan) — different ABACUS builds are not comparable.
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-6
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: genelpa
+        symmetry: 0
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        out_chg: -1
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+  kpoints_mesh: [1,1,1]
   pseudo_family: sg15_sz
 
 pw:
@@ -235,7 +535,132 @@ pw:
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
   kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_sz
+lcao_1q_pexsi_warm:
+  # 热启动（warm start）：用已收敛的密度当 PEXSI 的初值。
+  # 目的有两个：
+  #   (a) 时间——SCF 步数从 9–10 步降到 1–2 步，PEXSI 的时间 ∝ 步数；
+  #   (b) 复验历史结论——本文件上面 `lcao_1q_pexsi` 注释里记着一次
+  #       "G2 test"：54 原子 PEXSI 从收敛的 genelpa 密度出发，第一步 drho
+  #       6.7e-3、能量 −730767.5 → −730781.7 → −730775.1 eV 漂移，当时据此
+  #       判定"PEXSI 的密度/能量本身不准"。那是 **μ 未被自洽求解**造成的
+  #       （libpexsi 补丁 0b400b0 之前）。现在从同一初值出发，第一步就应该
+  #       落在收敛能量上。
+  # 密度来源：11_density 的 genelpa cell（CalcJob 382655，OUT.aiida/chg.cube，
+  #   3×3×3 = 54 原子，E_Fermi 2.204611 Ry），存为 SinglefileData pk=384743。
+  #   **换体系必须换 cube**：FFT 网格/原子数必须与当前 cell 一致，否则
+  #   ABACUS 读密度直接报错或给出错误结果。
+  # 参数 = 批 4c 的最优组合（method 3 + npole 22，54 原子 ΔE = +0.000 meV/atom）。
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-6
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: pexsi
+        symmetry: 0
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        out_chg: -1
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+        pexsi_temp: 0.0073529411764706
+        pexsi_method: 3
+        pexsi_npole: 22
+        pexsi_nproc_pole: 8
+        pexsi_nmax: 10
+        pexsi_delta_e: 20
+        pexsi_elec_thr: 1e-4
+        pexsi_mu_thr: 1e-3
+        pexsi_zero_thr: 1e-10
+        pexsi_ordering: 2
+        init_chg: file
+        read_file_dir: ./chg/
+    extra_files:
+      # **实测确定的文件名**：集群上 `abacus_pexsi_mu`（3.9.0.25 树 + 补丁）
+      # 的 running_scf.log 里报的是
+      #     "!!! Couldn't find the file: ./chg/chg.cube"
+      # ⇒ `init_chg file` 读的是 `<read_file_dir>/chg.cube`（nspin=1）。
+      # 注意：源码里 charge_init.cpp 走的是 `chgs<is+1>.cube`、test.yml 的
+      # 老 preset 写的是 `SPIN1_CHG.cube`、而 ABACUS 用 `out_chg "1 10"` 写出来的
+      # 名字又可能是 `SPIN1_CHG.cube` —— 四个名字各不相同，**以运行日志为准**。
+      # 这里三个名字都放上，反正只是几 MB 的冗余。
+      chg: 384823          # chg.cube  ← 实际被读取的那个
+      chgs1: 384796        # chgs1.cube
+      spin1: 384743        # SPIN1_CHG.cube
+    extra_files_basepath: chg
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_1q_genelpa_chg:
+  # 用 genelpa 跑一个收敛的 SCF 并把电荷密度取回来（供热启动当输入）。
+  # 与 `lcao_1q_pexsi_chg` 的区别：solver 是 genelpa、scf_thr 1e-6、
+  # mixing 0.5、σ 0.1 eV —— 与 PEXSI 标定/验收完全同一套数值条件，
+  # 这样"热启动的 PEXSI"和"冷的 PEXSI/genelpa"可以逐位比较。
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-6
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: genelpa
+        symmetry: 0
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        out_chg: "1 10"
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+    setting:
+      additional_retrieve_list:
+        - "chg.cube"
+  kpoints_mesh: [1,1,1]
+  pseudo_family: sg15_sz
+
+lcao_purif_dump:
+  # 密度矩阵纯化法（15_dm_purification）的数据导出用：
+  #   out_mat_hs 1 1  → 每步写 H(k)、S(k)（Γ-only 即 H(k=0)、S(k=0)）
+  #   out_dmk    1    → 写收敛的 DM(k)（Γ-only 文件名 dms1_nao.txt）作参考
+  # 其余参数与生产口径一致（genelpa、Γ-only、sg15_sz、ecutwfc 65、
+  # σ = 0.1 eV fd、mixing 0.5/8、scf_thr 1e-6）。
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: lcao
+        nspin: 1
+        ecutwfc: 65
+        scf_thr: 1e-6
+        scf_nmax: 100
+        calculation: scf
+        gamma_only: 1
+        ks_solver: genelpa
+        symmetry: 0
+        mixing_beta: 0.5
+        mixing_ndim: 8
+        out_chg: -1
+        out_mat_hs: "1 12"    # 必须是**空格分隔的字符串**：aiida-abacus 写 INPUT 用
+        #   f"{key}{value}"，若给 Python list 会写成 "[1, 12]"，ABACUS 会报
+        #   "Bad boolean parameter [1," 并退出（实测踩过）。
+        #   第一个数是开关，第二个数是**精度位数**（不是间隔）：write_HS.hpp 里
+        #   g << setprecision(out_mat_hs[1])，默认 8。
+        #   文件格式：第 1 行 dim，之后上三角按行（第 i 行写 j=i..dim-1），空格分隔。
+        # 注意：集群上的 abacus 3.10.0 **不认识 out_dmk**（"THE PARAMETER NAME
+        # 'out_dmk' IS NOT USED!" → Bad parameter 直接退出）。参考密度矩阵不需要它，
+        # 由 H、S 自己解广义本征问题得到。
+        smearing_method: fd
+        smearing_sigma: 0.0073529411764706
+  kpoints_mesh: [1,1,1]
   pseudo_family: sg15_sz

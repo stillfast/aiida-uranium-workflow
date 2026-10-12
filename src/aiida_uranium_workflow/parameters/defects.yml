@@ -1,8 +1,44 @@
 # Defect workflow protocol — per-backend layout (same as magmom.yml).
 # Each preset carries the defect-formation-energy settings:
 #
-#   supercell_matrix    — diagonal supercell repetition (e.g. [2,2,2]);
-#                         omit to use the input structure as the host cell
+#   supercell_matrix    — one supercell (diagonal [2,2,2] or a full 3x3
+#                         matrix); omit to use the input structure as the
+#                         host cell
+#   supercell_cells     — LIST of per-cell specs, each with its own matrix
+#                         AND its own k-mesh (k-point DENSITY should stay
+#                         constant as the cell grows: halve the mesh when
+#                         the cell doubles):
+#                           - {matrix: [2,2,2], kpoints_mesh: [7,7,7]}
+#                           - {matrix: [3,3,3], kpoints_mesh: [5,5,5]}
+#                           - {matrix: [4,4,4], kpoints_mesh: [3,3,3]}
+#                         each entry may also carry 'kpoints_distance'
+#                         (1/Å) or a custom 'label'.
+#                         **Per-cell SCF overrides** (ABACUS only): any of
+#                         the keys in utils/defects.py::PER_CELL_SCF_KEYS
+#                         may be given per entry and win over the shared
+#                         ``parameters/abacus/scf.yml`` preset — most
+#                         importantly ``mixing_ndim``, whose needed value
+#                         grows with the cell size (measured on the bcc-U
+#                         vacancy, fcc relaxes nothing else):
+#                           249 atoms (5x5x5) → mixing_ndim 16  ✓ 60 steps
+#                           431 atoms (6x6x6) → mixing_ndim 20  ✓ 187 steps
+#                                              (24 → 120 steps, faster)
+#                           1023 atoms (8x8x8) → NOT converged with any
+#                             charge-mixing setting tried (ndim 8-32,
+#                             gg0 1-5, fd/mp σ up to 0.05); the energy is
+#                             converged (0.09 eV/1023 atoms) but the
+#                             real-space drho criterion (1e-4) is not met
+#                         NOTE: never set ``mixing_beta <= 0.1`` — ABACUS
+#                         then silently skips its real-space Kerker
+#                         preconditioner and the SCF gets *worse*.
+#   supercell_matrices  — LIST of supercells for a size-convergence scan,
+#                         e.g. [[2,2,2], [3,3,3], [4,4,4]]: one host + one
+#                         defect calculation per matrix, each with its own
+#                         formation energy in output_parameters['cells']
+#                         (and a table in the report). A list under
+#                         ``supercell_matrix`` is accepted too; note that
+#                         three [n,n,n] rows are read as three cells, so a
+#                         real 3x3 matrix belongs in a single-cell preset.
 #   defect              — defect definition:
 #                           vacancy:     {type: vacancy, site_index: int,
 #                                         element: str, label: str}
@@ -96,7 +132,9 @@ test_relax:
 
 vacancy_scf:
   abacus:
-    supercell_matrix: [2, 2, 2]
+    supercell_matrices:
+      - {matrix: [2, 2, 2], kpoints_mesh: [6, 6, 6]}
+      - {matrix: [3, 3, 3], kpoints_mesh: [4, 4, 4]}
     defect:
       type: vacancy
       site_index: 0
@@ -116,7 +154,9 @@ vacancy_scf:
 
 vacancy_relax:
   abacus:
-    supercell_matrix: [2, 2, 2]
+    supercell_matrices:
+      - {matrix: [2, 2, 2], kpoints_mesh: [6, 6, 6]}
+      - {matrix: [3, 3, 3], kpoints_mesh: [4, 4, 4]}
     defect:
       type: vacancy
       site_index: 0
@@ -185,3 +225,61 @@ interstitial_relax:
       force_criterion: 0.00097      # Ha/bohr ≈ 0.05 eV/Å
       change_mixing_criterion: 0.005  # below the residual force (~0.008) so relax iterates to force_criterion instead of stopping with exit 354
       relax_iter: 5
+# ---------------------------------------------------------------------------
+# Supercell-size convergence scan: one WorkChain runs every cell in the list
+# (one host + one defect calculation each) and reports E_f per cell.
+# ---------------------------------------------------------------------------
+vacancy_scan:
+  abacus:
+    supercell_matrices: [[2, 2, 2], [3, 3, 3], [4, 4, 4]]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+  fleur:
+    supercell_matrices: [[2, 2, 2], [3, 3, 3]]
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+
+vacancy_nums:
+  abacus:
+    supercell_matrices:
+      - {matrix: [2, 2, 2], mixing_ndim: 8}
+      - {matrix: [3, 3, 3], mixing_ndim: 8}
+      - {matrix: [4, 4, 4], mixing_ndim: 12}
+      - {matrix: [5, 5, 5], mixing_ndim: 16}
+      - {matrix: [6, 6, 6], mixing_ndim: 24}
+      - {matrix: [7, 7, 7], mixing_ndim: 24}
+      - {matrix: [8, 8, 8], mixing_ndim: 24}
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf
+# ---------------------------------------------------------------------------
+# Supercell scan with an individual k-mesh per cell (ABACUS only): the
+# k-point DENSITY is kept roughly constant as the cell grows.
+# ---------------------------------------------------------------------------
+vacancy_scan_kmesh:
+  abacus:
+    supercell_cells:
+      - {matrix: [2, 2, 2], kpoints_mesh: [7, 7, 7]}
+      - {matrix: [3, 3, 3], kpoints_mesh: [5, 5, 5]}
+      - {matrix: [4, 4, 4], kpoints_mesh: [3, 3, 3]}
+    defect:
+      type: vacancy
+      site_index: 0
+      element: U
+      label: vac_U_0
+    wf_parameters:
+      mode: scf

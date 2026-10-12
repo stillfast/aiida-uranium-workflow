@@ -1,35 +1,3 @@
-lcao:
-  abacus:
-    parameters:
-      input:
-        nelec: 0.0
-        basis_type: lcao
-        nspin: 2
-        ecutwfc: 65
-        scf_thr: 1e-7
-        smearing_method: mp
-        smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
-        calculation: scf
-  kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz
-
-pw:
-  abacus:
-    parameters:
-      input:
-        nelec: 0.0
-        basis_type: pw
-        nspin: 2
-        ecutwfc: 140
-        scf_thr: 1e-7
-        smearing_method: mp
-        smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
-        calculation: scf
-  kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz
-
 qe_pw_pbe:
   abacus:
     parameters:
@@ -62,70 +30,67 @@ qe_pw_pz:
   kpoints_mesh: [15,15,15]
   pseudo_family: qeU-pz
 
-pw_r:
-  abacus:
-    parameters:
-      input:
-        nelec: 0.0
-        basis_type: pw
-        nspin: 2
-        ecutwfc: 150
-        scf_thr: 1e-7
-        smearing_method: mp
-        smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
-        calculation: scf
-  kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz_soc
 
-pw_r_soc:
-  abacus:
-    parameters:
-      input:
-        nelec: 0.0
-        basis_type: pw
-        nspin: 4
-        ecutwfc: 150
-        scf_thr: 1e-7
-        smearing_method: mp
-        smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
-        calculation: scf
-        lspinorb: True
-        noncolin: False
-  kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz_soc
-
-lcao_r:
+lcao_14ve_f:
   abacus:
     parameters:
       input:
         nelec: 0.0
         basis_type: lcao
-        nspin: 2
-        ecutwfc: 65
+        nspin: 1
+        ecutwfc: 150
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
   kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz_soc
+  pseudo_family: sg15_14ve_5f_1g
 
-lcao_r_soc:
+pw_14ve_f:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_14ve_5f_1g
+
+lcao_14ve_p:
   abacus:
     parameters:
       input:
         nelec: 0.0
         basis_type: lcao
-        nspin: 4
-        ecutwfc: 65
+        nspin: 1
+        ecutwfc: 150
         scf_thr: 1e-7
         smearing_method: mp
         smearing_sigma: 0.0073529411764706
-        scf_nmax: 100
+        scf_nmax: 50
         calculation: scf
-        lspinorb: True
-        noncolin: False
   kpoints_mesh: [11,11,11]
-  pseudo_family: sg15_sz_soc
+  pseudo_family: sg15_14ve_6p_1g
+
+pw_14ve_p:
+  abacus:
+    parameters:
+      input:
+        nelec: 0.0
+        basis_type: pw
+        nspin: 1
+        ecutwfc: 150
+        scf_thr: 1e-7
+        smearing_method: mp
+        smearing_sigma: 0.0073529411764706
+        scf_nmax: 50
+        calculation: scf
+  kpoints_mesh: [11,11,11]
+  pseudo_family: sg15_14ve_6p_1g

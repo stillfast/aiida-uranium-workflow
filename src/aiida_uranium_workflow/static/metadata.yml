@@ -7,19 +7,22 @@ yeesuan:
     max_wallclock_seconds: 7200
     queue_name: "q_ysuan"
     withmpi: true
-yeesuan_ys:
+  # Example: metadata presets may carry arbitrary extra keys beyond
+  # ``options`` — the loader passes the whole section through and only
+  # ``options`` is consumed by the adapters (extra keys are ignored).
+  pretend_text: "this key is carried but ignored — a placeholder demo"
+
+yeesuan_ys_2h:
   options:
     resources:
       num_machines: 1
       num_mpiprocs_per_machine: 56
       tot_num_mpiprocs: 56
-    max_wallclock_seconds: 43200
+    max_wallclock_seconds: 7200
+    max_memory_kb: 1572864000
     queue_name: "d2_ys"
     withmpi: true
-# d2_ys variant for the big supercell jobs: the 8×8×8 (1024-atom) SCF
-# needed ~50 min per electronic iteration and did not converge within
-# 12 h; the partition accepts up to 48 h (verified with the manual
-# Num_250 slurm run), so give it the full 48 h.
+
 yeesuan_ys_24h:
   options:
     resources:
@@ -27,6 +30,20 @@ yeesuan_ys_24h:
       num_mpiprocs_per_machine: 56
       tot_num_mpiprocs: 56
     max_wallclock_seconds: 86400
+    max_memory_kb: 1572864000
+    queue_name: "d2_ys"
+    withmpi: true
+
+# 1 node / d2_ys / 48 h。给 2662 原子（11x11x11）用：384005 实测 2250 s/步，
+# 24 h 只够 ~38 步且会撞 wallclock；48 h 才容得下 20-40 步的收敛过程。
+yeesuan_ys_48h:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_wallclock_seconds: 172800
+    max_memory_kb: 1572864000
     queue_name: "d2_ys"
     withmpi: true
 # d2_ys is a 1.5 TB-per-node fat-memory partition (MEMORY 1545000 MB per
@@ -43,18 +60,70 @@ yeesuan_ys_24h:
 # N×1.5 TB. ``num_machines`` = number of d2_ys nodes, 56 ranks each
 # (ABACUS LCAO diagonalisation is MPI-parallel across nodes via
 # genelpa/ELPA; ``--mem`` stays 1.5 TB per node).
-# Start with 2 nodes (3 TB total) to validate the multi-node MPI path;
-# raise num_machines if the per-rank footprint does not shrink enough.
+# 2-node result (2026-09-08, pks 378414/378465/378481): the first dense
+# diagonalisation still OOM-kills a node (kernel SIGKILL / exit 137 /
+# Intel MPI "KILLED BY SIGNAL: 9" on n09091/n09092 right after
+# "DONE : INIT SCF" — 3×N² dense workspace ≈ 2.2 TB+ on top of the
+# ~0.6–0.8 TB/node ABACUS arrays exceeds 2×1.5 TB). 4 nodes (6 TB)
+# spreads the dense buffers to ~1 TB/node peak. Raise num_machines
+# further if a node is still OOM-killed.
+# q_ysuan node with its *full* memory. Everything else on this
+# partition (``yeesuan``) inherits the computer default
+# ``default_memory_per_machine = 50000000`` kB, i.e. the Slurm script
+# gets ``#SBATCH --mem=48828`` (47.7 GB) — a q_ysuan node actually has
+# 190000 MB, so memory-hungry jobs (PEXSI, large LCAO basis sets,
+# 4×4×4-and-bigger cells) are cgroup-OOM-killed at ~48 GB. Verified on
+# 2026-09-11: the 128-atom PEXSI cell died with
+# "Detected 5 oom-kill event(s) ... Out Of Memory" while the same input
+# run by hand with the full node finished in 106 s.
+# ``max_memory_kb`` is the scheduler option (kb); the plugin writes
+# ``--mem=<kb//1024>`` MB, so 189440000 kB → ``--mem=185000`` (MB),
+# just under the node's 190000 MB.
+yeesuan_190g:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_memory_kb: 189440000  # 185 GB of the node's 190 GB
+    max_wallclock_seconds: 43200  # q_ysuan has no partition time limit
+    queue_name: "q_ysuan"
+    withmpi: true
+
 yeesuan_ys_1w:
   options:
     resources:
-      num_machines: 2
+      num_machines: 4
       num_mpiprocs_per_machine: 56
-      tot_num_mpiprocs: 112
+      tot_num_mpiprocs: 224
     max_memory_kb: 1572864000  # 1.5 TB per node → --mem=1536000 (MB)
     max_wallclock_seconds: 172800  # 48 h
     queue_name: "d2_ys"
     withmpi: true
+
+yeesuan_ys_chg:
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_wallclock_seconds: 86400
+    max_memory_kb: 1572864000
+    queue_name: "d2_ys"
+    withmpi: true
+    # Expand the small template cube (shipped via abacus.extra_files as
+    # SPIN1_CHG_TEMPLATE.cube) into the full-size initial density ON THE
+    # CLUSTER, right before the ABACUS run — nothing big is stored in
+    # AiiDA. ``-o SPIN1_CHG.cube`` guarantees the file name ABACUS's
+    # ``init_chg file`` + ``read_file_dir ./`` expects.
+    prepend_text: >-
+      /sh3/ysuanbase/home/yeesuan17910/miniconda3/envs/orbgen/bin/python3
+      expand_cube.py SPIN1_CHG_TEMPLATE.cube -s 8 8 8 -o SPIN1_CHG.cube
+  # NB: arbitrary extra keys must sit OUTSIDE ``options`` (as siblings) —
+  # ``options`` is injected verbatim into ``abacus.metadata.options``,
+  # whose namespace is non-dynamic.
+  pretend_text: "python expand_cube.py SPIN1_CHG_TEMPLATE.cube -s 8 8 8"
+
 xinghe:
   options:
     resources:
@@ -94,5 +163,74 @@ yunhe:
     # 6 h: 54-atom U supercell SCFs (phonopy / eos) exceed 2 h even with
     # nspin=1; jobs that finish early do not consume the limit.
     max_wallclock_seconds: 21600
-    queue_name: "AB"
+    queue_name: "CPU"
+    withmpi: true
+yeesuan_8n_384:
+  # 8-node job on the q_ysuan_384 partition (384 GB/node, no time limit,
+  # 56 cores/node). Used for the 1024-atom (8x8x8) PEXSI timing test: PEXSI's
+  # SelInv scales with the *total* rank count (measured 3.07x going from 56 to
+  # 224 ranks at 250 atoms), and its memory is distributed across the pole
+  # groups, so 8x56 = 448 ranks is the sweet spot that still fits comfortably
+  # (measured 56-79 GB total for 1024 atoms in the size ladder).
+  options:
+    resources:
+      num_machines: 8
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 448
+    max_memory_kb: 389120000  # 380 GB of the node's 384 GB (--mem is per node)
+    max_wallclock_seconds: 86400
+    queue_name: "q_ysuan_384"
+    withmpi: true
+
+yeesuan_4n_384:
+  # 4-node job on q_ysuan_384 (384 GB/node, no partition time limit, 56 cores
+  # per node). Used for the 1024-atom PEXSI timing test after the 8-node run
+  # was cancelled externally: 4x56 = 224 ranks, and `pexsi_nproc_pole 28`
+  # divides it (8 ranks per pole group, 30 poles -> 2 waves).
+  # 48 h cap so that a full 60-step SCF (est. 25-50 min/step) cannot be killed
+  # by the wallclock; the job exits as soon as the SCF converges.
+  options:
+    resources:
+      num_machines: 4
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 224
+    max_memory_kb: 389120000  # 380 GB of the node's 384 GB (--mem is per node)
+    max_wallclock_seconds: 172800
+    queue_name: "q_ysuan_384"
+    withmpi: true
+
+yeesuan_ys_fat1:
+  # 1 fat node on d2_ys (RealMemory 1 545 000 MB) with the memory EXPLICITLY
+  # requested. The plain ``yeesuan_ys_24h`` preset sets no ``max_memory_kb``,
+  # so AiiDA inherits the computer default (50 000 000 kB -> --mem=48828 MB =
+  # 47.7 GB) even though the node has 1.5 TB. That is what OOM-killed the
+  # 11x11x11 / 2000-atom cells:
+  #   384002 (2000 atoms)  --mem=48828 -> OUT_OF_MEMORY  (242 oom-kill events)
+  #   382893 (2662 atoms)  --mem=48828 -> Out Of Memory  (35 oom-kill events)
+  #   while 380158 (2000 atoms, same script) happened to fit.
+  # Use this preset for every genelpa supercell above ~1000 atoms.
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_memory_kb: 1572864000   # 1.5 TB of the node's 1.5 TB (--mem is per node)
+    max_wallclock_seconds: 172800  # 48 h
+    queue_name: "d2_ys"
+    withmpi: true
+
+yeesuan_1n_384:
+  # 1 node on q_ysuan_384 (384 GB/node, no partition time limit, 56 cores).
+  # Used for the 2662-atom (11x11x11) convergence validation: the earlier
+  # attempts ran on d2_ys with the inherited --mem=48828 MB (47.7 GB) and either
+  # OOM-killed (382893) or survived only by luck; ABACUS's own arrays grow with
+  # the cell volume, so give the node's memory explicitly.
+  options:
+    resources:
+      num_machines: 1
+      num_mpiprocs_per_machine: 56
+      tot_num_mpiprocs: 56
+    max_memory_kb: 389120000   # 380 GB of the node's 384 GB (--mem is per node)
+    max_wallclock_seconds: 172800  # 48 h: 2662 atoms costs ~2250 s/step
+    queue_name: "q_ysuan_384"
     withmpi: true

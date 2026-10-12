@@ -50,4 +50,3 @@ test_relax:
   potential_mapping:
     U: "U"
   kpoints_spacing: 0.0159 # the unit is A^-1 * 2pi, so 0.1 A^-1 = 0.1/2/pi (A^-1 * 2pi)= 0.0159154943 (A^-1 * 2pi)
-

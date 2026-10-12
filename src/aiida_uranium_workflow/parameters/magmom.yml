@@ -56,6 +56,20 @@ test_mag_soc:
       - [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
       - [[0.0, 0.0, 4.0], [0.0, 0.0, 4.0]]
       - [[0.0, 0.0, 4.0], [0.0, 0.0, -4.0]]
+  qe:
+    # QE non-collinear / SOC sweep — pair with an SCF preset that sets
+    # SYSTEM noncolin=true + lspinorb=true + nspin=1 (e.g.
+    # ``test_pseudo_r_soc`` in parameters/qe/magmom.yml). The species
+    # values are the initial magnetisation *magnitudes* (QE
+    # SYSTEM.starting_magnetization, per species); the direction is set
+    # by the optional reserved ``angle1`` / ``angle2`` keys (degrees,
+    # per species, QE SYSTEM.angle1/angle2 — angle1 = polar angle vs
+    # +z). NM / FM use the element-level key; the AFM seed splits into
+    # U1/U2 with opposite z directions (angle1 0° vs 180°).
+    magmom_list:
+      - {"U": 0.0}                                              # NM
+      - {"U": 2.0}                                              # FM (+z)
+      - {"U1": 2.0, "U2": 2.0, "angle1": {"U1": 0.0, "U2": 180.0}}  # AFM z
 # QE (pw.x) magmom sweep for gamma-U under the SSSP/1.3/PBE/efficiency
 # pseudopotentials (SCF base in parameters/qe/magmom.yml).
 # gamma-U (spacegroup 129, a=4.995 c=3.532) is weakly magnetic; scan

@@ -4,6 +4,12 @@ bcc-uranium: # uranium structure of T = 1073K
   wickoff_position: ["a"]
   x: [3.532] # x means 1D array containing lattice parameters in A and coordinates
 
+alpha-uranium: # uranium at T = 50K
+  spacegroup: 63
+  elements: ["U"]
+  wickoff_position: ["c"]
+  x: [2.8364,5.8666,4.9363, 0.1019]
+
 bcc-uranium-0K: # uranium structure of T = 0K
   spacegroup: 229
   elements: ["U"]
@@ -21,6 +27,30 @@ bcc-uranium-fleur:
   elements: ["U"]
   wickoff_position: ["a"]
   x: [3.439]
+
+bcc-uranium-qe: 
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.443392]
+
+bcc-uranium-qe-sssp: 
+  spacegroup: 229
+  elements: ["U"]
+  wickoff_position: ["a"]
+  x: [3.431388]
+
+Si-X/Diamond-qe:
+  spacegroup: 227
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [5.469900]
+
+Si-X/Diamond-abacus:
+  spacegroup: 227
+  elements: ["Si"]
+  wickoff_position: ["a"]
+  x: [5.478]
 
 gamma-uranium: 
   spacegroup: 129

@@ -301,7 +301,49 @@ def generate_magmom_matrix_table(
         row = [str(pk), e_str, de_str, cell_str] + fin_cols + start_cols
         lines.append("| " + " | ".join(row) + " |")
 
+    note = _missing_cell_total_note(output_params, workflow_type, cell_total)
+    if note:
+        lines += ["", note]
+
     return "\n".join(lines)
+
+
+def _missing_cell_total_note(
+    output_params: Dict[str, Any],
+    workflow_type: str,
+    cell_total: Dict[Any, Any],
+) -> str:
+    """Explain an all-empty ``M_cell`` column instead of leaving bare "—".
+
+    A whole column of "—" is indistinguishable from a broken report, so the
+    most common cause is spelled out: the child runs were not spin
+    polarised and therefore never produced a magnetization at all.
+    """
+    if not cell_total or any(value is not None for value in cell_total.values()):
+        return ""
+
+    nspins = {
+        str(value)
+        for value in (output_params.get("nspin") or {}).values()
+        if value is not None
+    }
+    if workflow_type == "abacus" and nspins == {"1"}:
+        return (
+            "> ⚠️ **M_cell 缺失**：所有子算例都是 `nspin: 1`（未自旋极化），ABACUS 因此不产生"
+            "自旋密度，解析器会丢掉 `magnetism` / `final_magnetism`，初始磁矩（`stru.mag`）"
+            "也不参与计算。请在基础预设里设 `nspin: 2`（如 `parameters/abacus/test.yml` 中的 "
+            "magmom 预设）后重跑本 workflow。当前的 magmom 适配器已会自动把未极化的"
+            "预设修成 `nspin: 2` 并给出提示，无需手工改预设。"
+        )
+    if workflow_type == "abacus":
+        return (
+            "> ⚠️ **M_cell 缺失**：子算例没有产出磁矩数据。检查基础预设是否自旋极化"
+            "（需要 `nspin: 2`），以及子算例是否真的跑完。"
+        )
+    return (
+        "> ⚠️ **M_cell 缺失**：子算例没有产出磁矩数据"
+        f"（backend={workflow_type}）。检查基础预设是否自旋极化，以及子算例是否跑完。"
+    )
 
 
 # ---------------------------------------------------------------------------

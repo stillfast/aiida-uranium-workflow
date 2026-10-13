@@ -624,6 +624,78 @@ class TestMagmomMatrixTable:
         # M_start columns remain (from the injected magmom_list).
         assert "M_start_U1 (µ_B) | M_start_U2 (µ_B)" in table
 
+    def test_abacus_missing_cell_note_nspin1(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # Regression (run 39df4b1f): the base preset had ``nspin: 1``, so the
+        # children produced no magnetization at all and every M_cell entry was
+        # "—".  A bare "—" column is indistinguishable from a broken report,
+        # so the cause must be spelled out underneath the table.
+        params = {
+            "final_energy": {518168: -27051.0, 518172: -27051.1},
+            "magnetism": {518168: None, 518172: None},
+            "final_magnetism": {518168: None, 518172: None},
+            "nspin": {518168: 1, 518172: 1},
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        # The column is still there (empty), plus the explanation.
+        assert "| 518168 | -27051.00000000 | +0.000 | — |" in table
+        assert "M_cell 缺失" in table
+        assert "`nspin: 1`" in table
+        assert "nspin: 2" in table
+
+    def test_abacus_missing_cell_note_other_cause(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # Polarised but still without data -> generic hint, not the nspin=1 one.
+        params = {
+            "final_energy": {1: -1.0},
+            "final_magnetism": {1: None},
+            "nspin": {1: 2},
+            "magmom_list": [[[0.0], [0.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        assert "M_cell 缺失" in table
+        assert "`nspin: 1`" not in table
+
+    def test_abacus_cell_total_rendered_has_no_note(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # A real value anywhere in the column -> no missing-data note at all.
+        params = {
+            "final_energy": {1: -100.0, 2: -99.5},
+            "final_magnetism": {1: 0.0, 2: 2.65},
+            "nspin": {1: 2, 2: 2},
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        assert "| 2 | -99.50000000 | +500.000 | +2.65 |" in table
+        assert "M_cell 缺失" not in table
+
+    def test_abacus_partial_cell_total_has_no_note(self) -> None:
+        from aiida_uranium_workflow.utils.report.magmom import (
+            generate_magmom_matrix_table,
+        )
+
+        # Only one child lost its data: the column is not empty overall, so
+        # the whole-column explanation must not fire.
+        params = {
+            "final_energy": {1: -100.0, 2: -99.5},
+            "final_magnetism": {1: None, 2: 2.65},
+            "nspin": {1: 1, 2: 1},
+            "magmom_list": [[[0.0], [0.0]], [[4.0], [4.0]]],
+        }
+        table = generate_magmom_matrix_table(params, workflow_type="abacus")
+        assert "| +2.65 |" in table
+        assert "M_cell 缺失" not in table
+
     def test_fleur_matrix(self) -> None:
         from aiida_uranium_workflow.utils.report.magmom import (
             generate_magmom_matrix_table,

@@ -23,8 +23,27 @@ class AbacusMagmomAdapter(SoftwareAdapter):
         from aiida import orm
 
         import copy
+        import warnings
 
         params = copy.deepcopy(self.software_params["parameters"])
+
+        # A magmom sweep is only meaningful with spin polarisation: under
+        # ``nspin: 1`` ABACUS computes no spin density, the initial moments
+        # shipped in ``stru.mag`` are ignored, and its parser drops
+        # ``magnetism`` / ``final_magnetism`` — the report then has no M_cell
+        # to show.  Spin polarise the children (``nspin: 4``/SOC is kept).
+        pinput = params.setdefault("input", {})
+        nspin = pinput.get("nspin")
+        if nspin is None or int(nspin) < 2:
+            pinput["nspin"] = 2
+            warnings.warn(
+                "magmom sweep: the base SCF preset has "
+                f"nspin={nspin if nspin is not None else 'unset'} (unpolarised) — "
+                "the initial magnetic moments would be ignored and the result "
+                "would report no M_cell. Using nspin=2 for this sweep; set "
+                "`nspin: 2` in the preset to make it explicit.",
+                stacklevel=2,
+            )
 
         code_label = self.code_label
 

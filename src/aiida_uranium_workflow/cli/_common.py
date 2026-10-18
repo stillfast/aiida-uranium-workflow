@@ -103,6 +103,7 @@ BASE_CLASS_TO_BACKEND: dict[str, str] = {
 }
 BANDDOS_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusBandWorkChain": "abacus",
+    "VaspBandsWorkChain": "vasp",
 }
 RELAX_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusRelaxWorkChain": "abacus",
@@ -171,7 +172,7 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         name="banddos",
         class_to_backend=BANDDOS_CLASS_TO_BACKEND,
         generate_report=_unsupported_base_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf"},
+        backend_to_key={"abacus": "scf", "fleur": "scf", "vasp": "scf"},
     ),
     "relax": MethodSpec(
         name="relax",

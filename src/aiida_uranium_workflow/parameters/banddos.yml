@@ -33,6 +33,18 @@ tdos:
       use_primitive_cell: true
       inpxml_changes:
         - ['set_complex_tag', {tag_name: 'cutoffs', changes: {numbands: 20}}]
+  vasp:
+    # aiida-vasp (vasp.v2.bands): SCF -> seekpath k-path -> non-SCF band
+    # pass -> constant-charge DOS pass. The SCF namespace (INCAR /
+    # potential family / k-mesh) comes from parameters/vasp/scf.yml.
+    run_bands: true
+    run_dos: true
+    run_proj_dos: false
+    band_mode: seekpath-aiida
+    band_kpoints_distance: 0.025   # 1/Angstrom spacing on the k-path
+    dos_kpoints_distance: 0.03     # 1/Angstrom spacing of the DOS mesh
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
 
 pdos:
   abacus:
@@ -42,6 +54,17 @@ pdos:
     band_kpoints_distance: 0.02
     dos_kpoints_distance: 0.1
     band_mode: seekpath-aiida
+    symprec: 1.0e-5
+    additional_band_analysis_parameters: {}
+  vasp:
+    # Projected DOS only (LORBIT=11 is added to the DOS pass by the
+    # adapter). run_bands: false -> a single constant-charge DOS pass.
+    run_bands: false
+    run_dos: true
+    run_proj_dos: true
+    band_mode: seekpath-aiida
+    band_kpoints_distance: 0.025
+    dos_kpoints_distance: 0.02
     symprec: 1.0e-5
     additional_band_analysis_parameters: {}
 

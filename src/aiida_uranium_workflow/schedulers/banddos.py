@@ -5,8 +5,10 @@ Binds the banddos workflow to:
 * ``parameters/banddos.yml`` (protocol — one entry per preset with
   per-backend blocks: ``abacus`` (the ``band_settings`` namespace:
   ``run_bands`` / ``run_dos`` / ``band_kpoints_distance`` /
-  ``dos_kpoints_distance`` / …) and ``fleur`` (``band_wf`` /
-  ``dos_wf`` overrides). The per-backend layout mirrors
+  ``dos_kpoints_distance`` / …), ``fleur`` (``band_wf`` /
+  ``dos_wf`` overrides) and ``vasp`` (``run_bands`` / ``run_dos`` /
+  ``run_proj_dos`` + the same k-path settings, forwarded to
+  aiida-vasp's ``band_settings``). The per-backend layout mirrors
   ``parameters/magmom.yml``.
 * ``parameters/abacus/banddos.yml`` / ``parameters/fleur/banddos.yml``
   (per-backend SCF presets — physical / SCF parameters only)
@@ -23,6 +25,7 @@ from __future__ import annotations
 from aiida_uranium_workflow.input_builders.banddos import (
     AbacusBandAdapter,
     FleurBandAdapter,
+    VaspBandAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (
     register_workflow,
@@ -56,13 +59,19 @@ def parse_banddos_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
 
     The ``abacus`` block is forwarded verbatim as the
     ``AbacusBandWorkChain``'s ``band_settings`` namespace; the ``fleur``
-    block (``band_wf`` / ``dos_wf``) is forwarded to the FLEUR adapter.
+    block (``band_wf`` / ``dos_wf``) goes to the FLEUR adapter; the
+    ``vasp`` block goes to the VASP adapter, which maps
+    ``run_bands``/``run_dos``/``run_proj_dos`` onto aiida-vasp's
+    ``only_dos``/``run_dos`` pair.
     """
     if not protocol:
         return {}
+    # ``or {}`` guards the YAML placeholders (a bare ``vasp:`` line is
+    # ``None``, not a dict).
     return {
-        "band_settings": dict(protocol.get("abacus", {})),
-        "fleur": dict(protocol.get("fleur", {})),
+        "band_settings": dict(protocol.get("abacus") or {}),
+        "fleur": dict(protocol.get("fleur") or {}),
+        "vasp": dict(protocol.get("vasp") or {}),
     }
 
 
@@ -74,28 +83,32 @@ def parse_banddos_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
 class BanddosWorkflowOrchestrator(WorkflowOrchestrator):
     """Orchestrator for the banddos workflow.
 
-    Supports both ABACUS (``AbacusBandWorkChain``) and FLEUR
-    (``FleurBandAndDosWorkChain``). The ``parameters/banddos.yml``
-    protocol presets carry per-backend blocks — ``abacus`` (the
-    ``band_settings`` namespace) and ``fleur`` (``band_wf`` /
-    ``dos_wf``); the per-backend preset files under
-    ``parameters/<backend>/scf.yml`` carry the SCF / physical
-    parameters (shared with relax).
+    Supports ABACUS (``AbacusBandWorkChain``), FLEUR
+    (``FleurBandAndDosWorkChain``) and VASP (aiida-vasp's
+    ``vasp.v2.bands`` / ``VaspBandsWorkChain``). The
+    ``parameters/banddos.yml`` protocol presets carry per-backend
+    blocks — ``abacus`` (the ``band_settings`` namespace), ``fleur``
+    (``band_wf`` / ``dos_wf``) and ``vasp`` (``run_bands`` /
+    ``run_dos`` / ``run_proj_dos`` + the k-path settings); the
+    per-backend preset files under ``parameters/<backend>/scf.yml``
+    carry the SCF / physical parameters (shared with relax).
     """
 
     ADAPTERS = {
         "abacus": AbacusBandAdapter,
         "fleur":  FleurBandAdapter,
+        "vasp":   VaspBandAdapter,
     }
 
-    BACKENDS = ("abacus", "fleur")
+    BACKENDS = ("abacus", "fleur", "vasp")
 
-    #: Per-backend preset-subkey mapping — both backends share the
+    #: Per-backend preset-subkey mapping — all backends share the
     #: unified ``parameters/<backend>/scf.yml`` (same file as relax):
-    #: ``"abacus": {"scf": [...]}``, ``"fleur": {"scf": "..."}``.
+    #: ``"abacus": {"scf": [...]}``, ``"vasp": {"scf": "standard"}``.
     PRESET_SUBKEYS: dict[str, str] = {
         "abacus": "scf",
         "fleur":  "scf",
+        "vasp":   "scf",
     }
 
 

@@ -13,7 +13,8 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
 
 ## Features
 
-* **8 methods × 3 backends** — smear, convergence, magmom, banddos, relax,
+* **8 methods × 3 backends** — smear, convergence, magmom, banddos (ABACUS /
+  FLEUR band WorkChains, and VASP via aiida-vasp's `vasp.v2.bands`), relax,
   elastic, EOS, phonopy (see the support matrix below).
 * **JSON-driven orchestration** — `input.json` (workflow, per-backend presets,
   structure, profile, codes) → `output.json` (WorkChain UUID map). No Python
@@ -44,7 +45,7 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
 | `smear`           |   ✓    |  ✓   |       |
 | `convergence`     |   ✓    |  ✓   |       |
 | `magmom`          |   ✓    |  ✓   |   ✓   |
-| `banddos`         |        |      |   ✓   |
+| `banddos`         |   ✓    |  ✓   |   ✓   |
 | `relax`           |   ✓*   |      |   ✓*  |
 | `elastic`         |   ✓    |      |   ✓   |
 | `eos`             |   ✓    |      |   ✓   |

@@ -185,15 +185,14 @@ class TestMethodSpecBackendToKey:
         assert "abacus" in spec.backend_to_key
         assert "vasp" in spec.backend_to_key
 
-    def test_banddos_only_has_abacus(self):
-        """banddos is ABACUS-only — the FLEUR / VASP paths use separate
-        WorkChain entry-points (``fleur.banddos`` lives in
-        ``workflows/banddos/fleur.py`` as a wrapper around the plugin
-        ``FleurBandAndDosWorkChain``). The banddos method spec therefore
-        lists only ``"abacus"`` in its ``backend_to_key`` mapping."""
+    def test_banddos_backends(self):
+        """banddos now covers ABACUS, FLEUR and VASP — all three share the
+        per-backend ``parameters/<backend>/scf.yml`` SCF presets, so each
+        backend appears in the ``backend_to_key`` mapping. (The FLEUR and
+        VASP paths use plugin WorkChains: ``FleurBandAndDosWorkChain`` and
+        aiida-vasp's ``VaspBandsWorkChain``.)"""
         spec = METHOD_SPECS["banddos"]
-        assert "abacus" in spec.backend_to_key
-        assert "vasp" not in spec.backend_to_key
+        assert set(spec.backend_to_key) == {"abacus", "fleur", "vasp"}
 
     def test_relax_has_abacus_fleur_and_qe(self):
         """relax covers abacus + fleur (plugin relax WorkChains) and qe

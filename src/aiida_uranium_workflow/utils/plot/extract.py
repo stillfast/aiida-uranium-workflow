@@ -141,7 +141,18 @@ def _read_fermi_eV(node, prefer=("fermi_energy_band", "fermi_energy_scf")):
     2. The output_parameters Dict's ``fermi_energy_band`` / ``..._scf``
        (FLEUR stores Hartree, so we convert).
     """
-    raw = node.base.attributes.get("fermi_level") if hasattr(node, "base") else None
+    attributes = getattr(getattr(node, "base", None), "attributes", None)
+    raw = None
+    if isinstance(attributes, dict):
+        raw = attributes.get("fermi_level")
+    elif attributes is not None:
+        # ``AttributeManager.get`` raises AttributeError (older versions:
+        # KeyError) for a missing key; the plain dict from ``.all`` returns
+        # ``None`` instead.
+        try:
+            raw = attributes.get("fermi_level")
+        except (AttributeError, KeyError):
+            raw = dict(attributes.all).get("fermi_level")
     if raw is None:
         return 0.0
     try:
@@ -484,10 +495,140 @@ def extract_fleur_pdos(wc) -> PdosData:
     )
 
 
+def _vasp_labels(bands) -> tuple[list, list]:
+    """Recover the seekpath labels stored on a ``VaspBandsWorkChain`` band node.
+
+    ``compose_labelled_bands`` copies the ``labels`` attribute off the input
+    ``KpointsData`` (a list of ``(kpoint_index, label)`` pairs) but leaves
+    ``label_numbers`` unset, so the pairs are unpacked here.
+    """
+    attrs = dict(bands.base.attributes.all)
+    raw = list(attrs.get("labels") or [])
+    labels: list = []
+    numbers: list = []
+    for entry in raw:
+        if isinstance(entry, (list, tuple)) and len(entry) == 2:
+            index, name = entry
+            numbers.append(int(index))
+            labels.append(str(name))
+        else:
+            labels.append(str(entry))
+    if not numbers:
+        numbers = list(attrs.get("label_numbers") or [])
+    return labels, numbers
+
+
+def extract_vasp(wc) -> Dict[str, Any]:
+    """Extract band + DOS from a ``VaspBandsWorkChain`` (aiida-vasp v2).
+
+    ``vasp.v2.bands`` stores the band pass as an ``orm.BandsData`` whose
+    k-points carry the seekpath labels and whose ``fermi_level`` attribute
+    is the one VASP printed (already eV). The DOS pass is an ``orm.ArrayData``
+    with ``energy`` / ``tdos`` (``(nspin, nenergy)`` for ISPIN=2, else
+    ``(nenergy,)``) and — when ``run_proj_dos`` set ``LORBIT=11`` — ``pdos``
+    (``(natoms, nenergy, 9)``, l-major: s / py pz px / dxy dyz dz2 dxz dx2-y2).
+    """
+    bands = wc.outputs.band_structure
+    energies = np.asarray(bands.get_bands(), dtype=float)
+    kpoints = np.asarray(bands.get_kpoints(), dtype=float)
+
+    # aiida stores ``array|bands`` as (nk, nbands) — or (nspin, nk, nbands)
+    # for ISPIN=2 / SOC, where the plot wants one curve per (band, k) and
+    # therefore averages the exchange-split channels.
+    if energies.ndim == 3:
+        energies = energies.mean(axis=0)
+    if energies.ndim == 2 and len(kpoints) and energies.shape[0] == len(kpoints):
+        energies = energies.T  # (nk, nbands) -> (nbands, nk)
+
+    labels, label_numbers = _vasp_labels(bands)
+    band_data = BandData(
+        energies=energies,
+        kpoints=kpoints,
+        labels=labels,
+        label_numbers=label_numbers,
+        fermi_energy=_read_fermi_eV(bands),
+        workchain_pk=wc.pk,
+        weights=_read_optional_array(bands, "weights"),
+    )
+
+    try:
+        dos = wc.outputs.dos
+    except Exception:
+        # ``dos`` is a required=False output: band-only runs carry none.
+        dos = None
+
+    if dos is None:
+        dos_data = None
+    else:
+        energy = np.asarray(dos.get_array("energy"))
+        tdos = np.asarray(dos.get_array("tdos"))
+        spin: Dict[str, np.ndarray] = {}
+        if tdos.ndim == 2 and tdos.shape[0] == 2:
+            # aiida-vasp stacks (spin-up, spin-down) — NOT a spin sum.
+            total = tdos[0] + tdos[1]
+            spin = {"dos_up": tdos[0], "dos_dn": tdos[1]}
+        else:
+            total = tdos
+        dos_data = DosData(
+            energy=energy,
+            total=total,
+            spin=spin,
+            fermi_energy=_read_fermi_eV(dos) or band_data.fermi_energy,
+            workchain_pk=wc.pk,
+        )
+    return {"band": band_data, "dos": dos_data}
+
+
+def extract_vasp_pdos(wc) -> PdosData:
+    """Extract projected DOS from a ``VaspBandsWorkChain``'s ``dos`` array.
+
+    Only populated when the protocol block set ``run_proj_dos: true`` (the
+    adapter then puts ``LORBIT=11`` on the DOS pass only). The stored
+    ``pdos`` is ``(natoms, nenergy, 9)`` for collinear runs and
+    ``(nspin, natoms, nenergy, 9)`` otherwise; the 9 columns are l-major
+    (``s``, ``py pz px``, ``dxy dyz dz2 dxz dx2-y2``), so ``s`` / ``p`` /
+    ``d`` are the only orbital channels available from VASP's vasprun.
+    """
+    dos = wc.outputs.dos
+    try:
+        pdos = np.asarray(dos.get_array("pdos"), dtype=float)
+    except (KeyError, AttributeError):
+        raise ValueError(
+            "VASP pdos array not found: the DOS pass ran without LORBIT=11. "
+            "Set run_proj_dos: true in the preset's 'vasp' block of "
+            "parameters/banddos.yml so the adapter adds LORBIT=11."
+        )
+    energy = np.asarray(dos.get_array("energy"), dtype=float)
+
+    if pdos.ndim == 4:  # (nspin, natoms, nenergy, 9) — sum the spin channels
+        pdos = pdos.sum(axis=0)
+    if pdos.ndim == 3:
+        if pdos.shape[2] == len(energy):
+            pdos = np.transpose(pdos, (0, 2, 1))  # (natoms, 9, nenergy)
+        elif pdos.shape[1] != len(energy):
+            raise ValueError(
+                f"unexpected pdos shape {pdos.shape}: expected (natoms, nenergy, 9)"
+            )
+
+    # per-atom, per-lm DOS -> orbital summary (sum over atoms, keep energy)
+    s_ch = pdos[:, :, 0].sum(axis=0)
+    p_ch = pdos[:, :, 1:4].sum(axis=(0, 2))
+    d_ch = pdos[:, :, 4:].sum(axis=(0, 2))
+    orbitals = {"s": s_ch, "p": p_ch, "d": d_ch}
+    return PdosData(
+        energy=energy,
+        orbitals=orbitals,
+        total=s_ch + p_ch + d_ch,
+        fermi_energy=_read_fermi_eV(dos) or _read_fermi_eV(wc.outputs.band_structure),
+        workchain_pk=wc.pk,
+    )
+
+
 # PDOS dispatch — by WorkChain process class name.
 PDOS_EXTRACTORS: Dict[str, Callable[..., PdosData]] = {
     "AbacusBandWorkChain": extract_abacus_pdos,
     "FleurBandAndDosWorkChain": extract_fleur_pdos,
+    "VaspBandsWorkChain": extract_vasp_pdos,
 }
 
 
@@ -515,6 +656,7 @@ def extract_pdos(pk_or_uuid) -> PdosData:
 EXTRACTORS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "AbacusBandWorkChain":          extract_abacus,
     "FleurBandAndDosWorkChain":     extract_fleur,
+    "VaspBandsWorkChain":           extract_vasp,
     # Future: "FleurBandDosWorkChain": extract_fleur_legacy,
 }
 
@@ -554,5 +696,7 @@ __all__ = [
     "extract_fleur",
     "extract_abacus_pdos",
     "extract_fleur_pdos",
+    "extract_vasp",
+    "extract_vasp_pdos",
     "_scf_fermi_offset_ev",
 ]

@@ -317,6 +317,84 @@ VASP preset 字段类似但 namespace 是 `parameters.incar` / `potential_family
 * `static/structure.yml` —— 结构索引。`utils/structure.py` 通过 `pyxtal` 按 spacegroup + Wyckoff 位置生成 `StructureData`。
 * `static/metadata.yml` —— 计算 metadata 模板（`options.resources` / `queue_name` / `withmpi` / `max_wallclock_seconds`）。`build_structure_and_metadata()` 把它注入到 preset 的 `metadata.options` 字段。
 
+### 5.6 示例：VASP 能带 + DOS（`banddos` 方法）
+
+`banddos` 方法在 `parameters/banddos.yml` 里按 backend 分块：`abacus`（`band_settings`）、
+`fleur`（`band_wf` / `dos_wf`）、`vasp`（`run_bands` / `run_dos` / `run_proj_dos` +
+k 路径设置）。VASP 侧包装的是 aiida-vasp 的 `vasp.v2.bands`（`VaspBandsWorkChain`）：
+它自己完成 SCF → seekpath 高对称路径 → 非自洽能带 → 恒电荷 DOS，输出
+`band_structure`（`orm.BandsData`，带 k 点标签和 `fermi_level` 属性）与
+`dos`（`energy` / `tdos` / `pdos`）。
+
+三份 YAML 分工：
+
+| 文件 | 内容 |
+|------|------|
+| `parameters/banddos.yml` | 预设名 → 每个 backend 的方法级协议（`vasp` 块） |
+| `parameters/vasp/scf.yml` | SCF/preset：`parameters.incar`、`potential_family`、`potential_mapping`、`kpoints_spacing`（或 `kpoints_mesh`） |
+| `static/metadata.yml` | 机时模板（`options.resources` / `queue_name` / …） |
+| `static/structure.yml` | 结构注册表（或用 pk / uuid） |
+
+`input.json`：
+
+```json
+{
+    "workflow": "banddos",
+    "parameters": {
+        "vasp": {"scf": ["standard"]},
+        "banddos": "tdos"
+    },
+    "static": {
+        "structure": "bcc-uranium",
+        "metadata": "yeesuan"
+    },
+    "profile": "aiida_profile",
+    "code": {"vasp": "vaspstd@yeesuan"}
+}
+```
+
+`parameters/banddos.yml` 的 `vasp` 块（与 ABACUS 的 `band_settings` 同名同义）：
+
+```yaml
+tdos:
+  vasp:
+    run_bands: true              # 沿 k 路径的非自洽能带
+    run_dos: true                # 恒电荷 DOS
+    run_proj_dos: false          # true 时给 DOS 那一步加 LORBIT=11 → pdos
+    band_mode: seekpath-aiida    # 或 sumo / pymatgen / latimer-munro
+    band_kpoints_distance: 0.025 # k 路径间隔，1/Å
+    dos_kpoints_distance: 0.03   # DOS 网格间隔，1/Å
+    symprec: 1.0e-5              # seekpath 对称性容差
+    additional_band_analysis_parameters: {}
+```
+
+`run_bands` / `run_dos` 映射到 aiida-vasp 的 `only_dos` / `run_dos`：
+`run_bands: false` 走单步 DOS，`run_proj_dos: true` 自动打开 `run_dos` 并只给
+DOS 那一步加 `LORBIT=11`。先干跑确认输入能通过端口校验：
+
+```bash
+aiida-uranium check -i input.json -o preview/   # 生成 preview/*.yml，不提交
+```
+
+然后 `aiida-uranium run -i input.json`（`output.json` 里会记
+`vasp.<scf preset>.<banddos preset> = uuid`）。画图用 `aiida-uranium plot`，
+spec 里 `"backend": "vasp"`：
+
+```json
+{
+    "mode": "band",
+    "is_combined": true,
+    "data": {"vasp": {"pks": [<VaspBandsWorkChain uuid 或 pk>], "labels": ["PBE"]}},
+    "figure": {"energy_range": [-6, 6], "fig_name": "band.png"}
+}
+```
+
+`aiida-uranium plot -i band.json -o fig/`（DOS 同理，`"mode": "dos"`；投影态密度用
+`"mode": "pdos"`，需要 `run_proj_dos: true`）。
+`utils/plot/extract.py` 里注册了 `VaspBandsWorkChain` 的 band / dos / pdos 提取器：
+能带自旋通道取平均后画成单曲线，DOS 的 `tdos` 是 `(nspin, nenergy)` 时
+自动给出 `dos_up` / `dos_dn` 两条自旋分量，`pdos` 按 lm 归并成 `s` / `p` / `d`。
+
 ---
 
 ## 6. 仓库结构与模块职责

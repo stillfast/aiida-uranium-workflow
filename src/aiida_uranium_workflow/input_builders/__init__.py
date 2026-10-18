@@ -12,14 +12,14 @@ The directory layout mirrors the workflow sub-packages::
     ├── smear/{abacus,vasp}.py
     ├── convergence/{abacus,vasp}.py
     ├── magmom/{abacus,vasp}.py
-    └── banddos/{abacus}.py     (ABACUS only — VASP band WorkChain not yet registered)
+    └── banddos/{abacus,vasp}.py (ABACUS ``abacus.band`` / VASP ``vasp.v2.bands``)
 """
 from .base import AdaptedInputs, SoftwareAdapter
 from .base_workchain import AbacusBaseWorkChainAdapter, VaspBaseWorkChainAdapter
 from .smear import AbacusAdapter, VaspAdapter
 from .convergence import AbacusConvergenceAdapter, VaspConvergenceAdapter
 from .magmom import AbacusMagmomAdapter, VaspMagmomAdapter
-from .banddos import AbacusBandAdapter, FleurBandAdapter
+from .banddos import AbacusBandAdapter, FleurBandAdapter, VaspBandAdapter
 
 __all__ = [
     "SoftwareAdapter",
@@ -34,4 +34,5 @@ __all__ = [
     "VaspMagmomAdapter",
     "AbacusBandAdapter",
     "FleurBandAdapter",
+    "VaspBandAdapter",
 ]

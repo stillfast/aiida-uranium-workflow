@@ -150,16 +150,30 @@ class VaspBandAdapter(SoftwareAdapter):
 
         inputs: dict[str, Any] = {"structure": structure, "scf": scf}
 
-        if flags["run_proj_dos"]:
-            # LORBIT=11 only for the DOS pass — the vasprun then carries the
-            # per-atom lm-decomposed DOS that ``extract_vasp_pdos`` reads.
-            # ``settings`` is passed explicitly because aiida-vasp only adds
-            # the ``include_node`` for the DOS parser when the namespace is
-            # left to it.
+        if flags["run_dos"]:
+            # The DOS namespace is supplied even for a plain DOS pass, for
+            # two reasons:
+            #  * aiida-vasp's own fallback builds ``dos_input.settings`` as a
+            #    plain dict and then calls ``update_nested_dict_node`` on it,
+            #    which raises ``AttributeError: 'AttributeDict' object has no
+            #    attribute 'get_dict'`` (vasp.v2.bands, run_bands_dos) — i.e.
+            #    run_dos without a ``dos`` namespace crashes the WorkChain;
+            #  * supplying ``charge.constant_charge`` keeps ICHARG=11 on the
+            #    DOS pass (a non-SCF read of the SCF charge density).
+            # ``incar`` must be present (aiida-vasp's parameters_validator
+            # rejects a parameters dict without it) — an empty block merges
+            # into the SCF INCAR unchanged.
+            dos_parameters: dict[str, Any] = {
+                "charge": {"constant_charge": True},
+                "incar": {},
+            }
+            if flags["run_proj_dos"]:
+                # LORBIT=11 only for the DOS pass — the vasprun then carries
+                # the per-atom lm-decomposed DOS ``extract_vasp_pdos`` reads.
+                # (lower-case INCAR keys: aiida-vasp normalises them anyway.)
+                dos_parameters["incar"] = {"lorbit": 11}
             inputs["dos"] = {
-                # lower-case INCAR keys: aiida-vasp normalises them anyway
-                # and warns about mixed case.
-                "parameters": orm.Dict(dict={"incar": {"lorbit": 11}}),
+                "parameters": orm.Dict(dict=dos_parameters),
                 "settings": orm.Dict(
                     dict={
                         "parser_settings": {

@@ -391,6 +391,16 @@ spec 里 `"backend": "vasp"`：
 
 `aiida-uranium plot -i band.json -o fig/`（DOS 同理，`"mode": "dos"`；投影态密度用
 `"mode": "pdos"`，需要 `run_proj_dos: true`）。
+
+> **坑：** aiida-vasp 的 `run_bands_dos` 在 `run_dos: true` 但**没有** `dos` 命名空间时，
+> 自己兜底构造的 `settings` 是普通 dict，随后 `update_nested_dict_node` 会抛
+> `AttributeError: 'AttributeDict' object has no attribute 'get_dict'`，整个
+> `VaspBandsWorkChain` excepted。适配器因此在 `run_dos` 为真时总是带一个
+> `dos` 命名空间（`parameters.charge.constant_charge: true` → ICHARG=11，
+> `incar` 空块满足 aiida-vasp 的 parameters 校验器，`settings` 里带
+> `parser_settings.include_node = [dos, bands]`），`run_proj_dos` 时再多加
+> `incar.lorbit: 11`。
+
 `utils/plot/extract.py` 里注册了 `VaspBandsWorkChain` 的 band / dos / pdos 提取器：
 能带自旋通道取平均后画成单曲线，DOS 的 `tdos` 是 `(nspin, nenergy)` 时
 自动给出 `dos_up` / `dos_dn` 两条自旋分量，`pdos` 按 lm 归并成 `s` / `p` / `d`。

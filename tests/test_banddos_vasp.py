@@ -166,6 +166,21 @@ def test_adapt_proj_dos_adds_lorbit(code_label, u_structure):
     assert "dos" in node_settings and "bands" in node_settings
 
 
+def test_adapt_plain_dos_keeps_constant_charge(code_label, u_structure):
+    # aiida-vasp crashes in run_bands_dos when run_dos is true but no ``dos``
+    # namespace is supplied (its fallback settings dict is a plain dict), so
+    # the adapter always provides one — with ICHARG=11 bits and an ``incar``
+    # block for the parameters validator.
+    adapted = _adapter({"run_bands": True, "run_dos": True}, code_label=code_label).adapt(
+        u_structure
+    )
+    dos = adapted.inputs["dos"]
+    params = dos["parameters"].get_dict()
+    assert params["charge"] == {"constant_charge": True}
+    assert "incar" in params
+    assert "lorbit" not in params["incar"]
+
+
 def test_adapt_band_only_has_no_dos_namespace(code_label, u_structure):
     adapted = _adapter({"run_bands": True, "run_dos": False}, code_label=code_label).adapt(u_structure)
     assert "dos" not in adapted.inputs

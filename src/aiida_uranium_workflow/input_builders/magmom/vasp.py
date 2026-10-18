@@ -79,6 +79,16 @@ class VaspMagmomAdapter(SoftwareAdapter):
             # Per-atom (site-order) initial moments: use the
             # ``magmom_per_atom_list`` port (aiida-vasp's
             # ``magmom_per_atom`` takes precedence over ``magmom_mapping``).
+            # Same per-atom contract as ABACUS' stru.mag: a list written for a
+            # 2-atom cell cannot seed a 4-atom one.
+            from .checks import validate_structure_seeds
+
+            validate_structure_seeds(
+                magmom_per_atom_list,
+                structure,
+                field="vasp.magmom_per_atom_list",
+                backend="vasp",
+            )
             inputs["magmom_per_atom_list"] = orm.List(list=magmom_per_atom_list)
         elif magmom_mapping_list:
             inputs["magmom_list"] = orm.List(list=magmom_mapping_list)

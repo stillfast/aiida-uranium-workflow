@@ -92,6 +92,15 @@ class AbacusMagmomAdapter(SoftwareAdapter):
         options = self.metadata.get("options", {})
         mag_list = self._prepare_workflow_inputs()
 
+        # Per-atom seeds: fail here, with the YAML path and the required
+        # length, instead of inside aiida-abacus' STRU writer at upload time
+        # (IndexError: list index out of range — see magmom.checks).
+        from .checks import validate_structure_seeds
+
+        validate_structure_seeds(
+            mag_list, structure, field="abacus.mag_list", backend="abacus"
+        )
+
         inputs = self._build_workchain_inputs(structure)
         if mag_list:
             inputs["magmom_list"] = orm.List(list=mag_list)

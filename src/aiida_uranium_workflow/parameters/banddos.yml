@@ -43,6 +43,8 @@ tdos:
     band_mode: seekpath-aiida
     band_kpoints_distance: 0.025   # 1/Angstrom spacing on the k-path
     dos_kpoints_distance: 0.03     # 1/Angstrom spacing of the DOS mesh
+    # NEDOS: DOS 能量网格点数（VASP 默认 301 太粗，费米面附近几乎是空的）
+    nedos: 3001
     symprec: 1.0e-5
     additional_band_analysis_parameters: {}
 
@@ -69,6 +71,8 @@ pdos:
     band_mode: seekpath-aiida
     band_kpoints_distance: 0.025
     dos_kpoints_distance: 0.02
+    # NEDOS: DOS 能量网格点数（VASP 默认 301 太粗，费米面附近几乎是空的）
+    nedos: 3001
     symprec: 1.0e-5
     additional_band_analysis_parameters: {}
 

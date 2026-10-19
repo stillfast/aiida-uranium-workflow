@@ -165,6 +165,22 @@ def test_adapt_proj_dos_refused_before_building(code_label, u_structure):
         )
 
 
+def test_adapt_dos_sets_dense_nedos(code_label, u_structure):
+    # VASP's default NEDOS (301 points over the whole band range) leaves the
+    # Fermi-surface region almost empty in the plotted DOS.
+    adapted = _adapter({"run_bands": False, "run_dos": True}, code_label=code_label).adapt(
+        u_structure
+    )
+    assert adapted.inputs["dos"]["parameters"].get_dict()["incar"]["nedos"] == 3001
+
+
+def test_adapt_dos_nedos_is_configurable(code_label, u_structure):
+    adapted = _adapter(
+        {"run_bands": False, "run_dos": True, "nedos": 9001}, code_label=code_label
+    ).adapt(u_structure)
+    assert adapted.inputs["dos"]["parameters"].get_dict()["incar"]["nedos"] == 9001
+
+
 def test_adapt_plain_dos_keeps_constant_charge(code_label, u_structure):
     # aiida-vasp crashes in run_bands_dos when run_dos is true but no ``dos``
     # namespace is supplied (its fallback settings dict is a plain dict), so
@@ -176,7 +192,7 @@ def test_adapt_plain_dos_keeps_constant_charge(code_label, u_structure):
     dos = adapted.inputs["dos"]
     params = dos["parameters"].get_dict()
     assert params["charge"] == {"constant_charge": True}
-    assert "incar" in params
+    assert params["incar"]["nedos"] == 3001
     assert "lorbit" not in params["incar"]
 
 

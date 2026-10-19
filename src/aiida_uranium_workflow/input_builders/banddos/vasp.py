@@ -20,6 +20,7 @@ extras::
         band_mode: seekpath-aiida    # or sumo
         band_kpoints_distance: 0.025 # 1/Å spacing along the path
         dos_kpoints_distance: 0.03   # 1/Å spacing of the DOS mesh
+        nedos: 3001                  # energy grid of the DOS (INCAR NEDOS)
         symprec: 1.0e-5              # seekpath symmetry tolerance
         additional_band_analysis_parameters: {}
 
@@ -47,6 +48,11 @@ BAND_SETTING_KEYS = (
     "kpoints_per_split",
     "additional_band_analysis_parameters",
 )
+
+#: INCAR ``NEDOS`` for the DOS pass. VASP's default (301 points over the whole
+#: band range) is far too coarse to resolve the Fermi surface: 3001 gives
+#: ~0.02 eV spacing over a 60 eV window.
+DEFAULT_NEDOS: int = 3001
 
 DEFAULT_BAND_SETTINGS: Dict[str, Any] = {
     "band_mode": "seekpath-aiida",
@@ -177,9 +183,16 @@ class VaspBandAdapter(SoftwareAdapter):
             # ``incar`` must be present (aiida-vasp's parameters_validator
             # rejects a parameters dict without it) — an empty block merges
             # into the SCF INCAR unchanged.
+            # NEDOS controls the energy grid stored in vasprun.xml, i.e. the
+            # grid the DOS is plotted on. VASP's default 301 points over the
+            # whole band range leaves the E_F region almost empty, so use a
+            # dense grid (protocol key ``nedos``, default 3001).
+            dos_incar: dict[str, Any] = {
+                "nedos": int(self._block().get("nedos", DEFAULT_NEDOS))
+            }
             dos_parameters: dict[str, Any] = {
                 "charge": {"constant_charge": True},
-                "incar": {},
+                "incar": dos_incar,
             }
             if flags["run_proj_dos"]:
                 # LORBIT=11 only for the DOS pass — the vasprun then carries

@@ -360,10 +360,11 @@ tdos:
   vasp:
     run_bands: true              # 沿 k 路径的非自洽能带
     run_dos: true                # 恒电荷 DOS
-    run_proj_dos: false          # true 时给 DOS 那一步加 LORBIT=11 → pdos
+    run_proj_dos: false          # VASP 不支持（见下）
     band_mode: seekpath-aiida    # 或 sumo / pymatgen / latimer-munro
     band_kpoints_distance: 0.025 # k 路径间隔，1/Å
     dos_kpoints_distance: 0.03   # DOS 网格间隔，1/Å
+    nedos: 3001                  # DOS 能量网格点数（INCAR NEDOS）
     symprec: 1.0e-5              # seekpath 对称性容差
     additional_band_analysis_parameters: {}
 ```
@@ -400,6 +401,10 @@ spec 里 `"backend": "vasp"`：
 > ABACUS（`AbacusBandWorkChain` 会输出 `dos_projected`，plot 的 `pdos` 模式可用）
 > 或 FLEUR。
 
+> `nedos`（默认 3001）落在 DOS 那一步的 INCAR 上：VASP 默认 301 点铺满整个能带范围
+> （几十到上百 eV），费米面附近几乎取不到点，画出来的 DOS 是一段折线。3001 点时
+> 60 eV 窗口约 0.02 eV 间距，够看精细结构；需要更密就把它调到 6000 或更大。
+>
 > **坑：** aiida-vasp 的 `run_bands_dos` 在 `run_dos: true` 但**没有** `dos` 命名空间时，
 > 自己兜底构造的 `settings` 是普通 dict，随后 `update_nested_dict_node` 会抛
 > `AttributeError: 'AttributeDict' object has no attribute 'get_dict'`，整个

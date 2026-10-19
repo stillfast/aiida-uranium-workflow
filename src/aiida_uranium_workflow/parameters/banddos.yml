@@ -2,7 +2,7 @@ tdos:
   abacus:
     run_bands: true
     run_dos: true
-    run_proj_dos: true
+    run_proj_dos: false
     band_kpoints_distance: 0.02
     dos_kpoints_distance: 0.1
     band_mode: seekpath-aiida
@@ -63,11 +63,10 @@ pdos:
     # adapter). run_bands: false -> a single constant-charge DOS pass.
     run_bands: false
     run_dos: true
-    run_proj_dos: false
-    # run_proj_dos 对 VASP 不可用：LORBIT=11 会让 vasprun.xml 的 <partial>
-    # 块对 f 电子赝势（如 U）写出 1+16 列，而 parsevasp 只认 10 列
-    # （s/p/d），整个 vasprun 解析失败 → WorkChain excepted。
-    # 需要投影态密度请用 ABACUS / FLEUR，或用 run_dos 只看总态密度。
+    run_proj_dos: true
+    # 投影态密度：给 DOS 那一步加 LORBIT=11，逐原子 lm 分解写入 DOSCAR
+    # （U 为 1+16 列），由 parsevasp 的 Doscar 读取（vasprun 的 <partial>
+    # 对 f 电子解析不了，所以适配器同时把 DOSCAR 加入检索列表）。
     band_mode: seekpath-aiida
     band_kpoints_distance: 0.025
     dos_kpoints_distance: 0.02
@@ -84,7 +83,7 @@ tdos_soc:
   abacus:
     run_bands: true
     run_dos: true
-    run_proj_dos: true
+    run_proj_dos: false
     band_kpoints_distance: 0.02
     dos_kpoints_distance: 0.15
     band_mode: seekpath-aiida

@@ -63,12 +63,15 @@ def test_dos_only():
     assert settings["run_dos"] is True
 
 
-def test_proj_dos_is_rejected():
-    # LORBIT=11 makes vasprun.xml's <partial> block 1+16 columns wide for
-    # f-electron POTCARs (U), which the pinned parsevasp cannot read — the
-    # whole vasprun parse then fails and the WorkChain excepts. Refuse loudly.
-    with pytest.raises(ValueError, match="run_proj_dos is not supported"):
-        _adapter({"run_bands": True, "run_proj_dos": True})._band_settings()
+def test_proj_dos_implies_dos():
+    # The projected DOS comes from DOSCAR (LORBIT=11), so run_proj_dos needs
+    # the DOS pass; bands are optional.
+    settings = _adapter({"run_bands": False, "run_proj_dos": True})._band_settings()
+    assert settings["run_dos"] is True
+    assert settings["only_dos"] is True
+    settings = _adapter({"run_bands": True, "run_proj_dos": True})._band_settings()
+    assert settings["run_dos"] is True
+    assert settings["only_dos"] is False
 
 
 def test_defaults_when_block_is_empty():
@@ -158,11 +161,19 @@ def test_adapt_kpoints_mesh(code_label, u_structure):
     assert kpoints.get_kpoints_mesh() == ([18, 18, 18], [0.0, 0.0, 0.0])
 
 
-def test_adapt_proj_dos_refused_before_building(code_label, u_structure):
-    with pytest.raises(ValueError, match="run_proj_dos is not supported"):
-        _adapter({"run_bands": False, "run_proj_dos": True}, code_label=code_label).adapt(
-            u_structure
-        )
+def test_adapt_proj_dos_uses_lorbit_and_retrieves_doscar(code_label, u_structure):
+    adapted = _adapter(
+        {"run_bands": False, "run_proj_dos": True}, code_label=code_label
+    ).adapt(u_structure)
+    dos = adapted.inputs["dos"]
+    params = dos["parameters"].get_dict()
+    assert params["incar"]["lorbit"] == 11
+    assert params["charge"] == {"constant_charge": True}
+    settings = dos["settings"].get_dict()
+    # vasprun.xml's <partial> block is unreadable for f-electron POTCARs, so
+    # the per-atom pdos is taken from DOSCAR, which must be retrieved.
+    assert "DOSCAR" in settings["ADDITIONAL_RETRIEVE_LIST"]
+    assert "dos" in settings["parser_settings"]["include_node"]
 
 
 def test_adapt_dos_sets_dense_nedos(code_label, u_structure):

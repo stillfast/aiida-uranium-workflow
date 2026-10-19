@@ -495,6 +495,93 @@ def extract_fleur_pdos(wc) -> PdosData:
     )
 
 
+#: DOSCAR channel name (parsevasp ``Doscar`` field) -> orbital summary key.
+_DOSCAR_LM_TO_ORBITAL = {
+    "s": "s",
+    "p": "p",
+    "py": "p", "px": "p", "pz": "p",
+    "d": "d",
+    "dxy": "d", "dyz": "d", "dz2": "d", "dxz": "d", "dx2-y2": "d", "x2-y2": "d",
+    "f": "f",
+    "fy(3x2-y2)": "f", "fxyz": "f", "fyz2": "f", "fz3": "f",
+    "fxz2": "f", "fz(x2-y2)": "f", "fx(x2-3y2)": "f",
+}
+
+
+def _vasp_dos_retrieved(wc):
+    """The ``retrieved`` folder of the DOS pass (``VaspWorkChain`` child)."""
+    try:
+        links = list(wc.base.links.get_outgoing().all())
+    except AttributeError:
+        return None
+    for link in links:
+        if link.link_label != "dos":
+            continue
+        try:
+            children = list(link.node.base.links.get_outgoing().all())
+        except AttributeError:
+            continue
+        for out in children:
+            if out.link_label == "retrieved" and hasattr(out.node, "list_object_names"):
+                return out.node
+    return None
+
+
+def _parse_doscar(retrieved):
+    """Parse ``DOSCAR`` with parsevasp's ``Doscar`` (returns ``(total, pdos)``).
+
+    parsevasp's DOSCAR reader supports every column layout VASP writes —
+    including the 1+16 lm-decomposed block of f-electron POTCARs (U) — which
+    is exactly what the vasprun ``<partial>`` reader does NOT handle.
+    """
+    if retrieved is None:
+        return None
+    try:
+        names = retrieved.list_object_names()
+    except (AttributeError, OSError):
+        return None
+    if "DOSCAR" not in names:
+        return None
+
+    from parsevasp.doscar import Doscar
+
+    with retrieved.open("DOSCAR", "r") as handler:
+        doscar = Doscar(file_handler=handler)
+    return doscar.get_dos(), doscar.get_pdos()
+
+
+def _doscar_total(dos_array):
+    """``(energy, total)`` from a parsed DOSCAR total block (spin-summed)."""
+    energy = np.asarray(dos_array["energy"], dtype=float)
+    total = np.asarray(dos_array["total"], dtype=float)
+    if total.ndim == 2:  # ISPIN=2: (nenergy, 2) -> spin sum
+        total = total.sum(axis=1)
+    return energy, total
+
+
+def _doscar_orbitals(pdos_arrays):
+    """Collapse per-atom lm-decomposed DOSCAR arrays into s / p / d / f."""
+    arrays = list(pdos_arrays)
+    if not arrays:
+        return {}
+    names = arrays[0].dtype.names or ()
+    orbitals: Dict[str, np.ndarray] = {}
+    for field in names:
+        if field == "energy":
+            continue
+        orbital = _DOSCAR_LM_TO_ORBITAL.get(field)
+        if orbital is None:
+            continue
+        summed = np.zeros_like(np.asarray(arrays[0][field], dtype=float), dtype=float)
+        for array in arrays:
+            values = np.asarray(array[field], dtype=float)
+            if values.ndim == 2:  # per-energy spin channels -> spin sum
+                values = values.sum(axis=-1)
+            summed = summed + values
+        orbitals[orbital] = orbitals.get(orbital, 0.0) + summed
+    return orbitals
+
+
 def _vasp_labels(bands) -> tuple[list, list]:
     """Recover the seekpath labels stored on a ``VaspBandsWorkChain`` band node.
 
@@ -554,11 +641,22 @@ def extract_vasp(wc) -> Dict[str, Any]:
     try:
         dos = wc.outputs.dos
     except Exception:
-        # ``dos`` is a required=False output: band-only runs carry none.
+        # ``dos`` is a required=False output: band-only runs carry none, and
+        # LORBIT=11 runs lose it because parsevasp cannot read the 17-column
+        # vasprun <partial> block of f-electron POTCARs.
         dos = None
 
     if dos is None:
         dos_data = None
+        parsed = _parse_doscar(_vasp_dos_retrieved(wc))
+        if parsed is not None:
+            energy, total = _doscar_total(parsed[0])
+            dos_data = DosData(
+                energy=energy,
+                total=total,
+                fermi_energy=band_data.fermi_energy,
+                workchain_pk=wc.pk,
+            )
     else:
         energy = np.asarray(dos.get_array("energy"))
         tdos = np.asarray(dos.get_array("tdos"))
@@ -589,7 +687,39 @@ def extract_vasp_pdos(wc) -> PdosData:
     (``s``, ``py pz px``, ``dxy dyz dz2 dxz dx2-y2``), so ``s`` / ``p`` /
     ``d`` are the only orbital channels available from VASP's vasprun.
     """
-    dos = wc.outputs.dos
+    parsed = _parse_doscar(_vasp_dos_retrieved(wc))
+    if parsed is not None:
+        # DOSCAR carries the per-atom lm-decomposed DOS (s / py px pz /
+        # 5 x d / 7 x f for U) and parsevasp reads every layout, so this is
+        # the primary source. A 1+9 spd block works just as well.
+        energy, total = _doscar_total(parsed[0])
+        orbitals = _doscar_orbitals(parsed[1])
+        if not orbitals:
+            raise ValueError(
+                "VASP DOSCAR has no partial-DOS channels: the DOS pass ran "
+                "without LORBIT=11. Set run_proj_dos: true in the preset's "
+                "'vasp' block of parameters/banddos.yml."
+            )
+        return PdosData(
+            energy=energy,
+            orbitals=orbitals,
+            total=total,
+            fermi_energy=_read_fermi_eV(wc.outputs.band_structure),
+            workchain_pk=wc.pk,
+        )
+
+    # Fallback: the `pdos` array aiida-vasp composes from vasprun.xml — only
+    # available when parsevasp could read the <partial> block (spd POTCARs).
+    try:
+        dos = wc.outputs.dos
+    except Exception:
+        dos = None
+    if dos is None:
+        raise ValueError(
+            "VASP pdos unavailable: no DOSCAR in the DOS pass' retrieved folder "
+            "and no vasprun `dos` node. Set run_proj_dos: true (the adapter then "
+            "adds LORBIT=11 and retrieves DOSCAR)."
+        )
     try:
         pdos = np.asarray(dos.get_array("pdos"), dtype=float)
     except (KeyError, AttributeError):

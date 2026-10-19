@@ -392,14 +392,21 @@ spec 里 `"backend": "vasp"`：
 
 `aiida-uranium plot -i band.json -o fig/`（DOS 同理，`"mode": "dos"`）。
 
-> **VASP 的投影态密度（`run_proj_dos`）不支持**：它需要 DOS 那一步带 `LORBIT=11`，
-> 而 U 这类含 f 轨道的赝势会让 vasprun.xml 的 `<partial>` 块写成 1+16 列，当前
-> 安装的 parsevasp（3.4.0）只按 10 列（s/p/d）读取，会抛
+> **VASP 的投影态密度（`run_proj_dos: true`）走 DOSCAR，不走 vasprun**：
+> DOS 那一步带 `LORBIT=11` 时，VASP 会写逐原子 lm 分解的 DOSCAR
+> （U 为 1+16 列：s / py px pz / 5×d / 7×f）；parsevasp 的 `Doscar` 能读所有列布局，
+> 但它的 **vasprun** `<partial>` 读者写死了 10 列（s/p/d），遇到 17 列直接
 > `ValueError: could not broadcast input array from shape (17,) into shape (10,)`，
-> 整个 vasprun 解析失败 → `VaspBandsWorkChain` excepted、`dos` / `band_structure`
-> 都没有输出。适配器现在会直接把 `run_proj_dos: true` 报错拒绝；需要投影态密度请用
-> ABACUS（`AbacusBandWorkChain` 会输出 `dos_projected`，plot 的 `pdos` 模式可用）
-> 或 FLEUR。
+> 于是 vasprun 解析器整体实例化失败、aiida-vasp 拿不到 `dos` 节点。所以
+> `utils/plot/extract.py` 的 `extract_vasp` / `extract_vasp_pdos` 改为从 DOSCAR 取
+> 总 DOS 与 s/p/d/f 投影，适配器则用 `settings.ADDITIONAL_RETRIEVE_LIST` 把 DOSCAR
+> 拉进 retrieved 目录。
+>
+> 另外 aiida-vasp 的 `VaspBandsWorkChain.inspect_bands_dos` 会无条件执行
+> `self.out('dos', dos.outputs.dos)`，DOS 子算例没有 `dos` 输出时整个 WorkChain 会
+> excepted；本机给 `/home/liguozhou/install/aiida-vasp` 打了一个两行的本地补丁
+> （`if 'dos' in dos.outputs:` 守卫，`projectors` 同理）。重装 aiida-vasp 后需要
+> 重新应用；`verdi daemon restart` 让新进程加载补丁。
 
 > `nedos`（默认 3001）落在 DOS 那一步的 INCAR 上：VASP 默认 301 点铺满整个能带范围
 > （几十到上百 eV），费米面附近几乎取不到点，画出来的 DOS 是一段折线。3001 点时

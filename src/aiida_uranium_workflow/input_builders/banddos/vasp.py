@@ -89,22 +89,11 @@ class VaspBandAdapter(SoftwareAdapter):
         run_dos = bool(block.get("run_dos", False))
         run_proj_dos = bool(block.get("run_proj_dos", False))
         if run_proj_dos:
-            # Projected DOS would need LORBIT=11 on the DOS pass. That
-            # breaks the whole vasprun parse with the parsevasp release we
-            # pin: VASP writes 1 + n_lm columns in the <partial> block
-            # (1+9 for spd POTCARs, 1+16 for spdf ones such as U), while
-            # parsevasp hard-codes 10 columns -> ValueError "could not
-            # broadcast input array from shape (17,) into shape (10,)" and
-            # the VaspWorkChain never produces `dos`/`band_structure`.
-            # Refuse loudly instead of submitting a run that cannot parse.
-            raise ValueError(
-                "banddos protocol (vasp): run_proj_dos is not supported — "
-                "LORBIT=11 writes 1+16 lm columns into vasprun.xml's <partial> "
-                "block for f-electron POTCARs (e.g. U) and parsevasp parses "
-                "only the 10-column spd layout, so the whole VASP parse fails. "
-                "Use run_dos: true for the total DOS (plus run_bands for the "
-                "band structure), or run the projected DOS in ABACUS / FLEUR."
-            )
+            # The projected DOS comes from DOSCAR (see _build_workchain_inputs):
+            # LORBIT=11 makes vasprun.xml's <partial> block 1+16 columns wide
+            # for f-electron POTCARs (U) and the pinned parsevasp cannot read
+            # it, so the DOS node is taken from DOSCAR instead.
+            run_dos = True
         if not run_bands and not run_dos:
             raise ValueError(
                 "banddos protocol (vasp): run_bands and run_dos are both false — "
@@ -183,10 +172,10 @@ class VaspBandAdapter(SoftwareAdapter):
             # ``incar`` must be present (aiida-vasp's parameters_validator
             # rejects a parameters dict without it) — an empty block merges
             # into the SCF INCAR unchanged.
-            # NEDOS controls the energy grid stored in vasprun.xml, i.e. the
-            # grid the DOS is plotted on. VASP's default 301 points over the
-            # whole band range leaves the E_F region almost empty, so use a
-            # dense grid (protocol key ``nedos``, default 3001).
+            # NEDOS controls the energy grid stored in vasprun.xml / DOSCAR,
+            # i.e. the grid the DOS is plotted on. VASP's default 301 points
+            # over the whole band range leaves the E_F region almost empty,
+            # so use a dense grid (protocol key ``nedos``, default 3001).
             dos_incar: dict[str, Any] = {
                 "nedos": int(self._block().get("nedos", DEFAULT_NEDOS))
             }
@@ -194,20 +183,23 @@ class VaspBandAdapter(SoftwareAdapter):
                 "charge": {"constant_charge": True},
                 "incar": dos_incar,
             }
+            settings: dict[str, Any] = {
+                "parser_settings": {"include_node": ["dos", "bands"]},
+            }
             if flags["run_proj_dos"]:
-                # LORBIT=11 only for the DOS pass — the vasprun then carries
-                # the per-atom lm-decomposed DOS ``extract_vasp_pdos`` reads.
-                # (lower-case INCAR keys: aiida-vasp normalises them anyway.)
-                dos_parameters["incar"] = {"lorbit": 11}
+                # LORBIT=11 = lm-decomposed partial DOS, written per atom into
+                # DOSCAR (s / py px pz / 5 x d / 7 x f for U, i.e. 1+16
+                # columns), which parsevasp's DOSCAR reader handles. The same
+                # data goes into vasprun.xml's <partial> block, and *that* the
+                # pinned parsevasp mis-parses (it hard-codes the 10-column spd
+                # layout) — the vasprun parser fails, so aiida-vasp produces no
+                # `dos` node; utils/plot/extract.py therefore builds the DOS and
+                # pdos from DOSCAR, which must be retrieved explicitly.
+                dos_incar["lorbit"] = 11
+                settings["ADDITIONAL_RETRIEVE_LIST"] = ["DOSCAR"]
             inputs["dos"] = {
                 "parameters": orm.Dict(dict=dos_parameters),
-                "settings": orm.Dict(
-                    dict={
-                        "parser_settings": {
-                            "include_node": ["dos", "bands"],
-                        }
-                    }
-                ),
+                "settings": orm.Dict(dict=settings),
             }
 
         return inputs

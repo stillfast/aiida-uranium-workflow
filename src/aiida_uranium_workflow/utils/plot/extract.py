@@ -649,7 +649,10 @@ def extract_pdos(pk_or_uuid) -> PdosData:
             f"No PDOS extractor registered for WorkChain {class_name!r} "
             f"(pk={wc.pk}). Supported: {sorted(PDOS_EXTRACTORS)}"
         )
-    return extractor(wc)
+    try:
+        return extractor(wc)
+    except (AttributeError, KeyError) as exc:
+        raise ValueError(_no_data_message(wc, class_name, exc)) from exc
 
 
 # Registry — dispatch by WorkChain process class name.
@@ -681,7 +684,29 @@ def extract_band_dos(pk_or_uuid) -> Dict[str, Any]:
             f"{class_name!r} (pk={wc.pk}). "
             f"Supported: {sorted(EXTRACTORS)}"
         )
-    return extractor(wc)
+    try:
+        return extractor(wc)
+    except (AttributeError, KeyError) as exc:
+        # ``wc.outputs.<x>`` raises NotExistent (an AttributeError) when the
+        # output link was never created — almost always because the
+        # WorkChain itself excepted/failed. Say so instead of only naming the
+        # missing link: the state and exit status are what the user needs.
+        raise ValueError(_no_data_message(wc, class_name, exc)) from exc
+
+
+def _no_data_message(wc, class_name: str, exc: Exception) -> str:
+    """Explain why a band/DOS extraction found no data."""
+    state = wc.process_state.value if wc.process_state else "?"
+    exit_status = wc.exit_status
+    parts = [f"{class_name}<{wc.pk}> produced no band/DOS data"]
+    if state != "finished" or (exit_status not in (None, 0)):
+        parts.append(f"state={state} exit_status={exit_status}")
+    traceback = dict(wc.base.attributes.all).get("exception")
+    if traceback:
+        last = [line for line in str(traceback).strip().splitlines() if line.strip()][-1]
+        parts.append(f"exception: {last}")
+    parts.append(f"output lookup failed: {exc}")
+    return "; ".join(parts) + ". Re-submit the workflow (and check `verdi process report <pk>`)."
 
 
 __all__ = [

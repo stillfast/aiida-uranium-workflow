@@ -63,10 +63,12 @@ def test_dos_only():
     assert settings["run_dos"] is True
 
 
-def test_proj_dos_implies_dos():
-    settings = _adapter({"run_bands": False, "run_proj_dos": True})._band_settings()
-    assert settings["run_dos"] is True
-    assert settings["only_dos"] is True
+def test_proj_dos_is_rejected():
+    # LORBIT=11 makes vasprun.xml's <partial> block 1+16 columns wide for
+    # f-electron POTCARs (U), which the pinned parsevasp cannot read — the
+    # whole vasprun parse then fails and the WorkChain excepts. Refuse loudly.
+    with pytest.raises(ValueError, match="run_proj_dos is not supported"):
+        _adapter({"run_bands": True, "run_proj_dos": True})._band_settings()
 
 
 def test_defaults_when_block_is_empty():
@@ -156,14 +158,11 @@ def test_adapt_kpoints_mesh(code_label, u_structure):
     assert kpoints.get_kpoints_mesh() == ([18, 18, 18], [0.0, 0.0, 0.0])
 
 
-def test_adapt_proj_dos_adds_lorbit(code_label, u_structure):
-    adapted = _adapter(
-        {"run_bands": False, "run_proj_dos": True}, code_label=code_label
-    ).adapt(u_structure)
-    dos = adapted.inputs["dos"]
-    assert dos["parameters"].get_dict()["incar"]["lorbit"] == 11
-    node_settings = dos["settings"].get_dict()["parser_settings"]["include_node"]
-    assert "dos" in node_settings and "bands" in node_settings
+def test_adapt_proj_dos_refused_before_building(code_label, u_structure):
+    with pytest.raises(ValueError, match="run_proj_dos is not supported"):
+        _adapter({"run_bands": False, "run_proj_dos": True}, code_label=code_label).adapt(
+            u_structure
+        )
 
 
 def test_adapt_plain_dos_keeps_constant_charge(code_label, u_structure):

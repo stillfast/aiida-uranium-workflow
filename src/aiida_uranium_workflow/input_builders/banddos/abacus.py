@@ -53,6 +53,12 @@ class AbacusBandAdapter(SoftwareAdapter):
                 },
             },
         }
+        # The base namespace needs its k-point strategy explicitly: a preset
+        # that only carries ``kpoints_distance`` (e.g. ``lcao`` in
+        # parameters/abacus/scf.yml) used to reach the WorkChain without any
+        # k-points and abort with exit 202 "Neither the `kpoints` nor the
+        # `kpoints_distance` input was specified" before anything was
+        # submitted.
         if "kpoints_mesh" in self.software_params:
             from aiida.plugins import DataFactory
 
@@ -62,6 +68,17 @@ class AbacusBandAdapter(SoftwareAdapter):
                 list(self.software_params["kpoints_mesh"])
             )
             inputs["base"]["kpoints"] = kpoints_mesh
+        elif "kpoints_distance" in self.software_params:
+            inputs["base"]["kpoints_distance"] = orm.Float(
+                float(self.software_params["kpoints_distance"])
+            )
+        elif "kpoints" in self.software_params:
+            from aiida.plugins import DataFactory
+
+            KpointsData = DataFactory("core.array.kpoints")
+            kpoints = KpointsData()
+            kpoints.set_kpoints(list(self.software_params["kpoints"]))
+            inputs["base"]["kpoints"] = kpoints
         if "pseudo_family" in self.software_params:
             inputs["base"]["pseudo_family"] = orm.Str(
                 str(self.software_params["pseudo_family"])

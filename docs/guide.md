@@ -389,8 +389,16 @@ spec 里 `"backend": "vasp"`：
 }
 ```
 
-`aiida-uranium plot -i band.json -o fig/`（DOS 同理，`"mode": "dos"`；投影态密度用
-`"mode": "pdos"`，需要 `run_proj_dos: true`）。
+`aiida-uranium plot -i band.json -o fig/`（DOS 同理，`"mode": "dos"`）。
+
+> **VASP 的投影态密度（`run_proj_dos`）不支持**：它需要 DOS 那一步带 `LORBIT=11`，
+> 而 U 这类含 f 轨道的赝势会让 vasprun.xml 的 `<partial>` 块写成 1+16 列，当前
+> 安装的 parsevasp（3.4.0）只按 10 列（s/p/d）读取，会抛
+> `ValueError: could not broadcast input array from shape (17,) into shape (10,)`，
+> 整个 vasprun 解析失败 → `VaspBandsWorkChain` excepted、`dos` / `band_structure`
+> 都没有输出。适配器现在会直接把 `run_proj_dos: true` 报错拒绝；需要投影态密度请用
+> ABACUS（`AbacusBandWorkChain` 会输出 `dos_projected`，plot 的 `pdos` 模式可用）
+> 或 FLEUR。
 
 > **坑：** aiida-vasp 的 `run_bands_dos` 在 `run_dos: true` 但**没有** `dos` 命名空间时，
 > 自己兜底构造的 `settings` 是普通 dict，随后 `update_nested_dict_node` 会抛

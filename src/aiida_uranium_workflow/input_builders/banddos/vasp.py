@@ -83,8 +83,22 @@ class VaspBandAdapter(SoftwareAdapter):
         run_dos = bool(block.get("run_dos", False))
         run_proj_dos = bool(block.get("run_proj_dos", False))
         if run_proj_dos:
-            # Projected DOS lives in the DOS pass: it implies run_dos.
-            run_dos = True
+            # Projected DOS would need LORBIT=11 on the DOS pass. That
+            # breaks the whole vasprun parse with the parsevasp release we
+            # pin: VASP writes 1 + n_lm columns in the <partial> block
+            # (1+9 for spd POTCARs, 1+16 for spdf ones such as U), while
+            # parsevasp hard-codes 10 columns -> ValueError "could not
+            # broadcast input array from shape (17,) into shape (10,)" and
+            # the VaspWorkChain never produces `dos`/`band_structure`.
+            # Refuse loudly instead of submitting a run that cannot parse.
+            raise ValueError(
+                "banddos protocol (vasp): run_proj_dos is not supported — "
+                "LORBIT=11 writes 1+16 lm columns into vasprun.xml's <partial> "
+                "block for f-electron POTCARs (e.g. U) and parsevasp parses "
+                "only the 10-column spd layout, so the whole VASP parse fails. "
+                "Use run_dos: true for the total DOS (plus run_bands for the "
+                "band structure), or run the projected DOS in ABACUS / FLEUR."
+            )
         if not run_bands and not run_dos:
             raise ValueError(
                 "banddos protocol (vasp): run_bands and run_dos are both false — "

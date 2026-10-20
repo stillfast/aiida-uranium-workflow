@@ -239,6 +239,51 @@ class ConfigLoader:
             return entry.parser_hook(protocol)
         return {}
 
+    def _missing_category_message(self, backend: str, category: str) -> str:
+        """Explain a ``parameters/<backend>/<category>.yml`` that does not exist.
+
+        The dict form of ``input.json["parameters"]`` —
+        ``{"<backend>": {"<category>": preset}}`` — names the preset **file**.
+        A key that belongs to a different workflow (e.g. ``defect`` instead of
+        ``elastic``) used to surface as a bare ``FileNotFoundError`` pointing
+        at the path; say what the current workflow expects and what exists
+        instead.
+        """
+        directory = self.data_root.parameters_dir / backend
+        available = (
+            sorted(path.stem for path in directory.glob("*.yml"))
+            if directory.is_dir()
+            else []
+        )
+
+        expected = None
+        workflow = self.input_params.get("workflow")
+        try:
+            from aiida_uranium_workflow.schedulers import get_workflow_entry
+
+            entry = get_workflow_entry(workflow) if workflow else None
+            orchestrator = getattr(entry, "orchestrator_cls", None)
+            if orchestrator is not None:
+                expected = orchestrator.PRESET_SUBKEYS.get(backend)
+        except (ImportError, ValueError):
+            expected = None
+
+        parts = [
+            f"parameters/{backend}/{category}.yml not found in the data root "
+            f"({self.data_root.path}).",
+            f"The '{category}' key of parameters['{backend}'] in input.json is "
+            "the preset FILE to read, not a preset name.",
+        ]
+        if expected:
+            parts.append(
+                f"For the '{workflow}' workflow the '{backend}' entry must be "
+                f'"{backend}": {{"{expected}": <preset>}} '
+                f"(file parameters/{backend}/{expected}.yml)."
+            )
+        if available:
+            parts.append(f"Available categories for {backend}: {available}.")
+        return " ".join(parts)
+
     def _load_all_software_params(
         self,
     ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[str]]]:
@@ -305,9 +350,14 @@ class ConfigLoader:
                             f"parameters['{backend}'] dict keys must be "
                             f"non-empty strings, got {category!r}"
                         )
-                    table = read_yaml(
+                    table_path = (
                         self.data_root.parameters_dir / backend / f"{category}.yml"
                     )
+                    if not table_path.is_file():
+                        raise ValueError(
+                            self._missing_category_message(backend, category)
+                        )
+                    table = read_yaml(table_path)
                     preset_names = self._coerce_preset_names(
                         backend, category, category_value
                     )

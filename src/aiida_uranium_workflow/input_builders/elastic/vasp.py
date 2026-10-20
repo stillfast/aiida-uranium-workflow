@@ -11,7 +11,24 @@ for
 from __future__ import annotations
 
 from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
-from typing import Any, Dict
+from typing import Any
+
+
+#: Keys of ``parameters/elastic.yml``'s vasp block that configure the
+#: ``vasp.relax`` lattice-relaxation child — the same names the relax
+#: protocol (``parameters/relax.yml``) uses.
+try:  # pragma: no cover - aiida-vasp independent
+    from ..relax.vasp import PROTOCOL_KEYS as _RELAX_PROTOCOL_KEYS
+except ImportError:  # pragma: no cover
+    _RELAX_PROTOCOL_KEYS = frozenset({"relax_type", "relax_settings"})
+
+#: ``relax_settings`` alone is a raw RelaxOptions override, not a spec.
+_RELAX_SPEC_KEYS = frozenset(_RELAX_PROTOCOL_KEYS) - {"relax_settings"}
+
+
+def _has_relax_spec(block: dict) -> bool:
+    """True when the block carries relax-yml style keys (``relax_type``, …)."""
+    return bool(_RELAX_SPEC_KEYS & set(block))
 
 
 class VaspElasticAdapter(SoftwareAdapter):
@@ -30,13 +47,20 @@ class VaspElasticAdapter(SoftwareAdapter):
         entry = self.software_params
         incar = copy.deepcopy(entry.get("parameters", {}).get("incar", {}))
         options = filter_scheduler_options(
-            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+            self.metadata.get("options", {}),
+            entry_point=self._workchain_entry_point(),
+            backend=self.name,
         )
 
         inputs: dict[str, Any] = {
             "code": orm.load_code(self.code_label),
             "structure": structure,
-            "parameters": {"incar": incar},
+            # orm.Dict, not a plain dict: the WorkChain exposes the
+            # VaspWorkChain ``parameters`` port (valid_type=orm.Dict), and
+            # ``aiida-uranium check --out`` validates the adapted inputs
+            # against the spec — a plain dict fails that check even though
+            # submit() would serialise it.
+            "parameters": orm.Dict(dict={"incar": incar}),
             "potential_family": orm.Str(entry["potential_family"]),
             "potential_mapping": orm.Dict(dict=entry["potential_mapping"]),
             "calc": {"metadata": {"options": options} if options else {}},
@@ -73,9 +97,39 @@ class VaspElasticAdapter(SoftwareAdapter):
         inputs["relax_lattice"] = orm.Bool(
             elastic_proto.get("relax_lattice", True)
         )
-        relax_settings = elastic_proto.get("relax_settings")
-        if relax_settings:
-            inputs["relax_settings"] = orm.Dict(dict=relax_settings)
+        # Fail hard when the lattice relaxation fails? Default False: the
+        # 24 strained cells are still computed from the input structure and
+        # the result is flagged (``lattice_relaxed: false``). Set
+        # ``require_lattice_relax: true`` in the protocol to abort with
+        # ERROR_RELAX instead.
+        inputs["require_lattice_relax"] = orm.Bool(
+            elastic_proto.get("require_lattice_relax", False)
+        )
+        # Relaxation settings of the ``vasp.relax`` lattice-relaxation child.
+        # The protocol block uses the SAME vocabulary as
+        # ``parameters/relax.yml``'s vasp block (``relax_type`` /
+        # ``relax_method`` / ``max_ionic_steps`` / ``force_cutoff`` / ...),
+        # which is translated onto aiida-vasp's RelaxOptions here; a raw
+        # ``relax_settings`` dict (RelaxOptions keys) overrides the
+        # translation. Without either, the workchain sends the plugin
+        # defaults (full cell + ions relaxation).
+        relax_block = {
+            key: value
+            for key, value in elastic_proto.items()
+            if key in _RELAX_PROTOCOL_KEYS
+        }
+        if _has_relax_spec(relax_block):
+            from ..relax.vasp import relax_settings_from_protocol
+
+            settings = relax_settings_from_protocol(
+                relax_block, structure.get_cell_volume()
+            )
+            inputs["relax_settings"] = orm.Dict(dict=settings)
+        elif relax_block.get("relax_settings"):
+            # Only the raw RelaxOptions dict was given.
+            inputs["relax_settings"] = orm.Dict(
+                dict=relax_block["relax_settings"]
+            )
         return inputs
 
     def _prepare_workflow_inputs(self):

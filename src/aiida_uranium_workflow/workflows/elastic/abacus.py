@@ -79,6 +79,18 @@ class AbacusElasticWorkChain(WorkChain):
             help="Shear strain magnitudes, e.g. [-0.01, -0.005, 0.005, 0.01].",
         )
         spec.input(
+            "relax_settings",
+            valid_type=orm.Dict,
+            required=False,
+            help=(
+                "``abacus.relax`` relax_settings of the internal-coordinate "
+                "relaxation (relax_type / relax_method / max_ionic_steps / "
+                "force_cutoff / stress_cutoff / …). Defaults to "
+                "DEFAULT_RELAX_SETTINGS (positions only, cg, 50 steps, "
+                "force_cutoff 0.05 eV/Å)."
+            ),
+        )
+        spec.input(
             "relax_internal",
             valid_type=orm.Bool,
             required=False,
@@ -199,10 +211,15 @@ class AbacusElasticWorkChain(WorkChain):
         }
         base_ns["abacus"]["parameters"] = orm.Dict(dict=params)
 
+        settings = (
+            self.inputs.relax_settings
+            if "relax_settings" in self.inputs
+            else orm.Dict(dict=DEFAULT_RELAX_SETTINGS)
+        )
         return {
             "structure": structure,
             "base": base_ns,
-            "relax_settings": orm.Dict(dict=DEFAULT_RELAX_SETTINGS),
+            "relax_settings": settings,
             "meta_convergence": orm.Bool(False),
             "clean_workdir": orm.Bool(False),
         }

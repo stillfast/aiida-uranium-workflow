@@ -56,11 +56,29 @@ test:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
     relax_internal: true
+    # Internal-coordinate relaxation (abacus.relax per strain, cell fixed) —
+    # same vocabulary as parameters/relax.yml's abacus block.
+    relax_settings:
+      relax_type: positions
+      relax_method: cg
+      max_ionic_steps: 50
+      force_cutoff: 0.05
+      stress_cutoff: 1.0
   vasp:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]
     relax_lattice: true
     relax_internal: true
+    # Lattice-relaxation child (vasp.relax, ISIF=3) — same vocabulary as
+    # parameters/relax.yml's vasp block; translated onto aiida-vasp's
+    # RelaxOptions by input_builders/elastic/vasp.py.
+    relax_type: positions_cell
+    relax_method: cg
+    max_ionic_steps: 50
+    force_cutoff: 0.05
+    meta_convergence: true
+    volume_convergence: 0.01
+    max_meta_convergence_iterations: 5
   qe:
     norm_strains: [-0.010, -0.005, 0.005, 0.010]
     shear_strains: [-0.010, -0.005, 0.005, 0.010]

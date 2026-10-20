@@ -77,6 +77,14 @@ class AbacusElasticAdapter(SoftwareAdapter):
         inputs["relax_internal"] = orm.Bool(
             elastic_proto.get("relax_internal", True)
         )
+        # Relaxation settings of the ``abacus.relax`` children that relax the
+        # internal coordinates under each strain. Same vocabulary as
+        # ``parameters/relax.yml``'s abacus block; without it the workchain
+        # falls back to its DEFAULT_RELAX_SETTINGS (positions / cg / 50 steps
+        # / force_cutoff 0.05).
+        relax_settings = elastic_proto.get("relax_settings")
+        if relax_settings:
+            inputs["relax_settings"] = orm.Dict(dict=relax_settings)
         return inputs
 
     def _prepare_workflow_inputs(self):

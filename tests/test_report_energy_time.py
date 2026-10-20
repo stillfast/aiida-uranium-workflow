@@ -525,6 +525,107 @@ class TestRelaxDeriveFromNode:
             float(np.linalg.det(cell)), abs=1e-3)
 
 
+class TestRelaxInternalParameters:
+    """The relaxed atomic coordinates ("internal parameters") of a relax report.
+
+    Regression (2-relax case): the report only listed the lattice constants,
+    volume and energy — the relaxed fractional coordinates were missing, and
+    for VASP the volume/lattice rows were empty because the relaxed geometry
+    is attached as ``relax__structure`` (the code looked for ``structure``).
+    """
+
+    @staticmethod
+    def _structure(cell, frac):
+        import numpy as np
+
+        cell = np.asarray(cell, dtype=float)
+        frac = np.asarray(frac, dtype=float)
+
+        class _Site:
+            def __init__(self, index, position):
+                self.kind_name = "U"
+                self.frac_coords = frac[index]
+                self.position = position
+
+        sites = [
+            _Site(i, frac[i] @ cell) for i in range(len(frac))
+        ]
+
+        class _Struct:
+            def __init__(self):
+                self.cell = cell
+                self.sites = sites
+
+            def get_cell_volume(self):
+                return float(abs(np.linalg.det(cell)))
+
+        return _Struct()
+
+    def _orthorhombic(self):
+        # alpha-U-like cell with the Cmcm internal parameter y ≈ 0.0977.
+        return self._structure(
+            [[2.8096, 0.0, 0.0], [0.0, 5.8488, 0.0], [0.0, 0.0, 4.8902]],
+            [
+                [0.0, 0.097679, 0.25],
+                [0.0, 0.902321, 0.75],
+                [0.5, 0.097679, 0.25],
+                [0.5, 0.902321, 0.75],
+            ],
+        )
+
+    def test_fractional_coordinates(self):
+        from aiida_uranium_workflow.utils.report.relax import fractional_coordinates
+
+        rows = fractional_coordinates(self._orthorhombic())
+        assert len(rows) == 4
+        assert rows[0]["element"] == "U"
+        assert rows[0]["frac"] == pytest.approx([0.0, 0.097679, 0.25])
+        assert rows[0]["cartesian"][1] == pytest.approx(0.097679 * 5.8488, abs=1e-9)
+
+    def test_fractional_coordinates_without_structure(self):
+        from aiida_uranium_workflow.utils.report.relax import fractional_coordinates
+
+        assert fractional_coordinates(None) == []
+
+    def test_report_renders_internal_parameters_table(self):
+        from aiida_uranium_workflow.utils.report.relax import generate_report
+
+        out = {
+            "workflow": "relax",
+            "backend": "vasp",
+            "lattice_constants": [2.8096, 5.8488, 4.8902],
+            "lattice_angles": [90.0, 90.0, 90.0],
+            "volume": 80.3586,
+            "energy": -44.553972,
+            "sites": [
+                {"index": 0, "element": "U",
+                 "frac": [0.0, 0.097679, 0.25],
+                 "cartesian": [0.0, 0.571306, 1.222551]},
+                {"index": 2, "element": "U",
+                 "frac": [0.5, 0.097679, 0.25],
+                 "cartesian": [1.404775, 0.571306, 1.222551]},
+            ],
+        }
+        report = generate_report(out, pk=42, workflow_type="vasp")
+        assert "## Internal Parameters (relaxed atomic coordinates)" in report
+        assert "| site | element | frac x | frac y | frac z |" in report
+        assert "| 0 | U | 0.000000 | 0.097679 | 0.250000 |" in report
+        assert "| 2 | U | 0.500000 | 0.097679 | 0.250000 |" in report
+        # lattice angles are part of the summary now
+        assert "relaxed lattice angles α, β, γ | [90.0000, 90.0000, 90.0000] °" in report
+
+    def test_vasp_relaxed_geometry_from_relax_structure_link(self):
+        from aiida_uranium_workflow.utils.report.relax import _derive_from_node
+
+        structure = self._orthorhombic()
+        node = type("Node", (), {"outputs": type("Outs", (), {"relax__structure": structure})()})()
+        data = _derive_from_node(node, "vasp")
+        # 2.8096 * 5.8488 * 4.8902
+        assert data["volume"] == pytest.approx(80.3596, abs=1e-2)
+        assert data["lattice_constants"] == pytest.approx([2.8096, 5.8488, 4.8902], abs=1e-4)
+        assert len(data["sites"]) == 4
+
+
 # ---------------------------------------------------------------------------
 # Magmom — Magnetism Matrix table (compact per-configuration format)
 # ---------------------------------------------------------------------------

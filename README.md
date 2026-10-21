@@ -46,13 +46,29 @@ input.json  ──►  aiida-uranium run     ──►  WorkChains in AiiDA
 | `convergence`     |   ✓    |  ✓   |       |
 | `magmom`          |   ✓    |  ✓   |   ✓   |
 | `banddos`         |   ✓    |  ✓   |   ✓   |
-| `relax`           |   ✓*   |      |   ✓*  |
+| `relax`           |   ✓*   |  ✓*  |   ✓*  |
 | `elastic`         |   ✓    |      |   ✓   |
 | `eos`             |   ✓    |      |   ✓   |
-| `phonopy`         |   ✓    |      |       |
+| `phonopy`         |   ✓    |  ✓†  |   ✓   |
 
 \* `relax` has no custom WorkChain — it calls the plugin relax WorkChains
-(`abacus.relax` / `fleur.relax`) directly.
+(`abacus.relax` / `vasp.relax` / `fleur.relax`) directly. The `vasp` block
+keeps the ABACUS vocabulary (`relax_type` / `relax_method` /
+`max_ionic_steps` / `force_cutoff` / `meta_convergence` /
+`volume_convergence` / `max_meta_convergence_iterations`); the adapter
+translates it into aiida-vasp's `RelaxOptions` (ISIF / IBRION / NSW /
+EDIFFG), and a raw `relax_settings:` mapping is merged last as the escape
+hatch.
+
+† `vasp` `phonopy` is frozen-phonon like ABACUS / FLEUR: one **static force
+run** per displaced supercell (`IBRION=-1` / `NSW=0` / `ISIF=2`, forces from
+`misc['forces']` in eV/Å, tags from the `vasp.incar` block of
+`parameters/phonopy.yml`) plus the `phonopy.phonopy` post-processing. Its
+`input.json` needs **two** codes:
+
+```json
+"code": {"vasp": "vaspstd@yeesuan", "phonopy": "phonopy@cloud"}
+```
 
 ## Quick start
 

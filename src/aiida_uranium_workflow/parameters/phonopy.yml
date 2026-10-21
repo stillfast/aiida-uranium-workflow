@@ -18,10 +18,12 @@
 #
 # Two families of implementations share this protocol:
 #
-# * **ABACUS / FLEUR** — frozen-phonon: displaced supercells are computed
-#   with the SCF backend (forces) and post-processed with phonopy (band
-#   structure + DOS). The keys below the preset (supercell_matrix /
-#   primitive_matrix / band_mode / dos / ...) drive those backends.
+# * **ABACUS / VASP / FLEUR** — frozen-phonon: displaced supercells are
+#   computed with the SCF backend (forces) and post-processed with phonopy
+#   (band structure + DOS). The keys below the preset (supercell_matrix /
+#   primitive_matrix / band_mode / dos / ...) drive those backends. The
+#   backend-specific force-run knobs live in a per-backend sub-block
+#   (``vasp:`` for VASP — see the block at the end of ``standard``).
 # * **QE** — no supercells and no phonopy code: the backend runs the
 #   aiida-qe **DFPT** chain (pw.x SCF → ``quantumespresso.ph.base`` →
 #   ``quantumespresso.q2r.base`` → ``quantumespresso.matdyn.base``) on
@@ -33,7 +35,13 @@
 #       "code": {"qe": "pw@<host>", "ph": "ph@<host>",
 #                "q2r": "q2r@<host>", "matdyn": "matdyn@<host>"}
 #
-# Each preset below is one phonon run.
+# Each preset below is one phonon run. The structure must be the *relaxed*
+# equilibrium cell — the finite-displacement method expands around it.
+#
+# NOTE for VASP: ``input.json`` needs both a VASP code (the displaced
+# supercells) and a phonopy code (the post-processing), e.g.::
+#
+#     "code": {"vasp": "vaspstd@yeesuan", "phonopy": "phonopy@cloud"}
 
 test:
   # ---- phonopy pre-processing (frozen-phonon supercells) -----------------
@@ -122,6 +130,32 @@ test:
     # Total DOS from a second matdyn.x run on a dense q mesh.
     dos: true
     dos_mesh: [21, 21, 21]
+
+  # ---- VASP backend (frozen-phonon, static force runs) -------------------
+  # Same pipeline as ABACUS / FLEUR: one force calculation per displaced
+  # supercell, phonopy post-processing afterwards. The SCF base (INCAR,
+  # POTCAR family, k-point density) comes from ``parameters/vasp/scf.yml``;
+  # the block below only carries what the VASP force runs need on top.
+  # ``input.json`` needs two codes: the VASP one and the phonopy one (the
+  # post-processing CalcJob may live on another computer, e.g.
+  # ``phonopy@cloud``):
+  #
+  #     "code": {"vasp": "vaspstd@yeesuan", "phonopy": "phonopy@cloud"}
+  vasp:
+    # INCAR tags of the displaced-supercell runs. Merged LAST into the
+    # preset INCAR, so an SCF-preset value cannot turn the runs into
+    # something that produces no forces. This is the VASP counterpart of
+    # the ABACUS ``calculation=scf`` + ``cal_force=1`` pair:
+    #   IBRION=-1  no ionic update (static)
+    #   NSW=0      a single electronic loop
+    #   ISIF=2     forces (and stress) are calculated — VASP's default for
+    #              IBRION=-1, kept explicit on purpose
+    # VASP writes <varray name="forces"> into vasprun.xml, which
+    # aiida-vasp exposes as ``misc['forces']`` (eV/Å, one row per atom).
+    incar:
+      ibrion: -1
+      nsw: 0
+      isif: 2
 
 test_fleur:
   # FLEUR backend: same phonopy settings as ``test``, forces computed by

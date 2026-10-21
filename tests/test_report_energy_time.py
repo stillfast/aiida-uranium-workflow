@@ -531,7 +531,8 @@ class TestRelaxInternalParameters:
     Regression (2-relax case): the report only listed the lattice constants,
     volume and energy — the relaxed fractional coordinates were missing, and
     for VASP the volume/lattice rows were empty because the relaxed geometry
-    is attached as ``relax__structure`` (the code looked for ``structure``).
+    is attached as ``relax.structure`` (a nested output, i.e.
+    ``node.outputs.relax.structure``) while the code looked for ``structure``.
     """
 
     @staticmethod
@@ -618,7 +619,18 @@ class TestRelaxInternalParameters:
         from aiida_uranium_workflow.utils.report.relax import _derive_from_node
 
         structure = self._orthorhombic()
-        node = type("Node", (), {"outputs": type("Outs", (), {"relax__structure": structure})()})()
+
+        class _Outs:
+            """``node.outputs.relax.structure`` — AiiDA stores the plugin's
+            ``relax.structure`` output as the namespace ``relax``."""
+
+            def __init__(self, relaxed):
+                self.relax = {"structure": relaxed}
+
+            def __getitem__(self, key):
+                return getattr(self, key)
+
+        node = type("Node", (), {"outputs": _Outs(structure)})()
         data = _derive_from_node(node, "vasp")
         # 2.8096 * 5.8488 * 4.8902
         assert data["volume"] == pytest.approx(80.3596, abs=1e-2)

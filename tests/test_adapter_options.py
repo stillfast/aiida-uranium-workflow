@@ -119,6 +119,10 @@ ADAPTER_FACTORIES = [
     ("relax_abacus", lambda c, i: relax.AbacusRelaxAdapter(
         code_label=c, software_params=_ABACUS_SCF, metadata={}, workflow_data={},
         extra_codes={})),
+    ("relax_vasp", lambda c, i: relax.VaspRelaxAdapter(
+        code_label=c, software_params=_VASP_SCF, metadata={}, workflow_data={
+            "vasp": {"relax_type": "volume"}},
+        extra_codes={})),
     ("relax_fleur", lambda c, i: relax.FleurRelaxAdapter(
         code_label=c, software_params=_FLEUR_SCF, metadata={}, workflow_data={},
         extra_codes={"inpgen": i})),

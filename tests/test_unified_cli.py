@@ -194,26 +194,28 @@ class TestMethodSpecBackendToKey:
         spec = METHOD_SPECS["banddos"]
         assert set(spec.backend_to_key) == {"abacus", "fleur", "vasp"}
 
-    def test_relax_has_abacus_fleur_and_qe(self):
-        """relax covers abacus + fleur (plugin relax WorkChains) and qe
-        (PwRelaxWorkChain), no VASP."""
+    def test_relax_has_abacus_vasp_fleur_and_qe(self):
+        """relax covers abacus + vasp + fleur (plugin relax WorkChains) and
+        qe (PwRelaxWorkChain); all of them read the shared
+        ``parameters/<backend>/scf.yml`` SCF presets."""
         spec = METHOD_SPECS["relax"]
         assert spec.backend_to_key == {
             "abacus": "scf",
+            "vasp": "scf",
             "fleur": "scf",
             "qe": "scf",
         }
-        assert "vasp" not in spec.backend_to_key
 
-    def test_phonopy_has_abacus_fleur_and_qe(self):
-        """phonopy covers abacus + fleur + qe (no VASP)."""
+    def test_phonopy_has_abacus_vasp_fleur_and_qe(self):
+        """phonopy covers abacus + vasp + fleur + qe, all reading the shared
+        ``parameters/<backend>/scf.yml`` presets."""
         spec = METHOD_SPECS["phonopy"]
         assert spec.backend_to_key == {
             "abacus": "scf",
+            "vasp": "scf",
             "fleur": "scf",
             "qe": "scf",
         }
-        assert "vasp" not in spec.backend_to_key
 
     def test_eos_has_abacus_fleur_and_qe(self):
         """eos covers abacus + fleur + qe (no VASP)."""

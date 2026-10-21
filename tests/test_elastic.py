@@ -16,41 +16,57 @@ _EV_PER_J = 1.602176634e-19
 
 
 def _known_cubic():
-    return np.array([
-        [200, 120, 120, 0, 0, 0],
-        [120, 200, 120, 0, 0, 0],
-        [120, 120, 200, 0, 0, 0],
-        [0, 0, 0, 60, 0, 0],
-        [0, 0, 0, 0, 60, 0],
-        [0, 0, 0, 0, 0, 60],
-    ], dtype=float)
+    return np.array(
+        [
+            [200, 120, 120, 0, 0, 0],
+            [120, 200, 120, 0, 0, 0],
+            [120, 120, 200, 0, 0, 0],
+            [0, 0, 0, 60, 0, 0],
+            [0, 0, 0, 0, 60, 0],
+            [0, 0, 0, 0, 0, 60],
+        ],
+        dtype=float,
+    )
 
 
 def _known_orthorhombic():
     """9 independent constants (α-U style): C11≠C22≠C33, C12≠C13≠C23."""
-    return np.array([
-        [230, 130, 110, 0, 0, 0],
-        [130, 260, 120, 0, 0, 0],
-        [110, 120, 240, 0, 0, 0],
-        [0, 0, 0, 70, 0, 0],
-        [0, 0, 0, 0, 55, 0],
-        [0, 0, 0, 0, 0, 80],
-    ], dtype=float)
+    return np.array(
+        [
+            [230, 130, 110, 0, 0, 0],
+            [130, 260, 120, 0, 0, 0],
+            [110, 120, 240, 0, 0, 0],
+            [0, 0, 0, 70, 0, 0],
+            [0, 0, 0, 0, 55, 0],
+            [0, 0, 0, 0, 0, 80],
+        ],
+        dtype=float,
+    )
 
 
 def _strain_set(with_combined=True):
-    return np.array([d[0] for d in generate_deformations(
-        [-0.010, -0.005, 0.005, 0.010],
-        [-0.010, -0.005, 0.005, 0.010],
-        COMBINED_STRAIN_MODES if with_combined else None,
-    )])
+    return np.array(
+        [
+            d[0]
+            for d in generate_deformations(
+                [-0.010, -0.005, 0.005, 0.010],
+                [-0.010, -0.005, 0.005, 0.010],
+                COMBINED_STRAIN_MODES if with_combined else None,
+            )
+        ]
+    )
 
 
 def _synthesize_energies(C_gpa, strains, V, e0=-56165.0):
     """E(ε) = E0 + (V/2)·εᵀ·C·ε with C in GPa, energies in eV."""
-    return e0 + V * 1e-30 / 2 * np.einsum(
-        "ni,ij,nj->n", strains, C_gpa * 1e9, strains
-    ) / _EV_PER_J
+    return (
+        e0
+        + V
+        * 1e-30
+        / 2
+        * np.einsum("ni,ij,nj->n", strains, C_gpa * 1e9, strains)
+        / _EV_PER_J
+    )
 
 
 class TestGenerateDeformations:
@@ -82,23 +98,107 @@ class TestGenerateDeformations:
         """The default modes span the orthorhombic biaxial + cubic sets."""
         as_tuples = [tuple(m) for m in COMBINED_STRAIN_MODES]
         # orthorhombic ε7..ε9 and cubic ε1 / ε2 from the method notes.
-        for mode in [(1, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0), (0, 1, 1, 0, 0, 0),
-                     (1, 1, 1, 0, 0, 0), (0, 0, 0, 1, 1, 1)]:
+        for mode in [
+            (1, 1, 0, 0, 0, 0),
+            (1, 0, 1, 0, 0, 0),
+            (0, 1, 1, 0, 0, 0),
+            (1, 1, 1, 0, 0, 0),
+            (0, 0, 0, 1, 1, 1),
+        ]:
             assert mode in as_tuples
+
+
+class TestApplyDeformationMatrix:
+    """The deformed cell must be ``L · Fᵀ`` (``StructureData.cell`` rows are
+    the lattice vectors).
+
+    Regression: ``F · L`` applies the *transposed* strain whenever the cell
+    is not isotropic — for the α-U cell (a=2.80, b=5.84, c=4.91 Å) the xy
+    shear came out b/a ≈ 2.1× too large, xz c/a ≈ 1.75× too large and yz
+    c/b ≈ 0.84× too small, i.e. C66/C55/C44 were wrong by exactly those
+    ratios while C11..C23 (diagonal F) were fine. The manual VASP reference
+    run (pymatgen ``DeformedStructureSet``) gives C66 ≈ 97 GPa where the
+    buggy version gave ≈ 204 GPa.
+    """
+
+    CELL = np.array([[2.80273, 0, 0], [0, 5.83665, 0], [0, 0, 4.90696]])
+    FRAC = [
+        [0.0, 0.09846, 0.25],
+        [0.0, 0.90154, 0.75],
+        [0.5, 0.59846, 0.25],
+        [0.5, 0.40154, 0.75],
+    ]
+
+    def _structure(self):
+        from aiida import orm
+
+        structure = orm.StructureData(cell=self.CELL, pbc=True)
+        for frac in self.FRAC:
+            structure.append_atom(position=np.asarray(frac) @ self.CELL, symbols=["U"])
+        return structure
+
+    def test_matches_pymatgen_deformed_structure_set(self, aiida_profile):
+        """Byte-identical to pymatgen's DeformedStructureSet (the method the
+        manual elastic example uses)."""
+        from pymatgen.analysis.elasticity.strain import DeformedStructureSet
+        from pymatgen.core import Lattice, Structure
+
+        from aiida_uranium_workflow.utils.elastic import apply_deformation_matrix
+
+        structure = self._structure()
+        reference = DeformedStructureSet(
+            Structure(Lattice(self.CELL), ["U"] * 4, self.FRAC),
+            symmetry=False,
+            norm_strains=[-0.005, 0.005],
+            shear_strains=[-0.005, 0.005],
+        )
+        defs = generate_deformations([-0.005, 0.005], [-0.005, 0.005])
+        for (_, deformation, _), expected in zip(defs, reference.deformed_structures):
+            got = np.asarray(apply_deformation_matrix(structure, deformation).cell)
+            np.testing.assert_allclose(
+                got,
+                expected.lattice.matrix,
+                atol=1e-8,
+                err_msg="deformed cell mismatch",
+            )
+
+    def test_shear_angle_is_not_amplified_by_the_cell_shape(self, aiida_profile):
+        """ε_xy = 0.005 must give an engineering shear γ = 0.01 (not γ·b/a)."""
+        from aiida_uranium_workflow.utils.elastic import apply_deformation_matrix
+
+        structure = self._structure()
+        _, deformation, _ = [
+            d
+            for d in generate_deformations([-0.005, 0.005], [-0.005, 0.005])
+            if d[2] == "s(0, 1)"
+        ][0]
+        cell = np.asarray(apply_deformation_matrix(structure, deformation).cell)
+        a, b = cell[0], cell[1]
+        gamma = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+        # cos(angle) ≈ −γ for the tilted vector; |γ| must be the Voigt ε6.
+        assert abs(gamma) == pytest.approx(0.01, abs=1e-9)
 
 
 class TestFitElasticFromStress:
     def test_recovers_cubic_tensor(self):
         C = _known_cubic()
-        strains = np.array([d[0] for d in generate_deformations(
-            [-0.010, -0.005, 0.005, 0.010], [-0.010, -0.005, 0.005, 0.010])])
+        strains = np.array(
+            [
+                d[0]
+                for d in generate_deformations(
+                    [-0.010, -0.005, 0.005, 0.010], [-0.010, -0.005, 0.005, 0.010]
+                )
+            ]
+        )
 
         def voigt_to_full(v):
-            return np.array([[v[0], v[5], v[4]], [v[5], v[1], v[3]],
-                             [v[4], v[3], v[2]]])
+            return np.array(
+                [[v[0], v[5], v[4]], [v[5], v[1], v[3]], [v[4], v[3], v[2]]]
+            )
 
-        stresses = np.array([voigt_to_full(s) for s in np.einsum(
-            "ij,nj->ni", C, strains)])
+        stresses = np.array(
+            [voigt_to_full(s) for s in np.einsum("ij,nj->ni", C, strains)]
+        )
         # ABACUS reports positive stress as compression (opposite of
         # pymatgen's positive = tension) — feed the raw kbar values with
         # the ABACUS sign so the fit's internal negation is exercised.
@@ -120,7 +220,7 @@ class TestFitElasticFromEnergy:
         (C11, C12, C44) is recovered — including the off-diagonal C12."""
         C = _known_cubic()
         strains = _strain_set(with_combined=True)
-        V = 3.45 ** 3
+        V = 3.45**3
         energies = _synthesize_energies(C, strains, V)
 
         res = fit_elastic_from_energy(strains, energies, V)
@@ -139,7 +239,7 @@ class TestFitElasticFromEnergy:
         """All 9 independent orthorhombic constants recovered."""
         C = _known_orthorhombic()
         strains = _strain_set(with_combined=True)
-        V = 3.45 ** 3
+        V = 3.45**3
         energies = _synthesize_energies(C, strains, V)
 
         res = fit_elastic_from_energy(strains, energies, V)
@@ -160,7 +260,7 @@ class TestFitElasticFromEnergy:
         old behaviour)."""
         C = _known_cubic()
         strains = _strain_set(with_combined=False)
-        V = 3.45 ** 3
+        V = 3.45**3
         energies = _synthesize_energies(C, strains, V)
 
         res = fit_elastic_from_energy(strains, energies, V)
@@ -208,6 +308,22 @@ class TestReport:
             "abacus",
         )
         assert "Young modulus Y_VRH | 90.600 GPa" in table
+
+    def test_deformed_lattice_source_is_reported(self):
+        """``require_lattice_relax`` failures must not be silent in the report."""
+        relaxed = generate_summary_table(
+            {"method": "stress", "equilibrium_structure_source": "lattice_relax"},
+            "vasp",
+        )
+        assert "deformed lattice | relaxed (lattice_relax)" in relaxed
+        assert "the strains were applied to the INPUT cell" not in relaxed
+
+        unrelaxed = generate_summary_table(
+            {"method": "stress", "equilibrium_structure_source": "input"},
+            "abacus",
+        )
+        assert "deformed lattice | INPUT cell (not relaxed)" in unrelaxed
+        assert "the strains were applied to the INPUT cell" in unrelaxed
 
 
 class TestElasticSchedulerPresetNames:

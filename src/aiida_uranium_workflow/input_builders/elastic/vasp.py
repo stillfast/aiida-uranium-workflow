@@ -14,23 +14,6 @@ from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
 from typing import Any
 
 
-#: Keys of ``parameters/elastic.yml``'s vasp block that configure the
-#: ``vasp.relax`` lattice-relaxation child — the same names the relax
-#: protocol (``parameters/relax.yml``) uses.
-try:  # pragma: no cover - aiida-vasp independent
-    from ..relax.vasp import PROTOCOL_KEYS as _RELAX_PROTOCOL_KEYS
-except ImportError:  # pragma: no cover
-    _RELAX_PROTOCOL_KEYS = frozenset({"relax_type", "relax_settings"})
-
-#: ``relax_settings`` alone is a raw RelaxOptions override, not a spec.
-_RELAX_SPEC_KEYS = frozenset(_RELAX_PROTOCOL_KEYS) - {"relax_settings"}
-
-
-def _has_relax_spec(block: dict) -> bool:
-    """True when the block carries relax-yml style keys (``relax_type``, …)."""
-    return bool(_RELAX_SPEC_KEYS & set(block))
-
-
 class VaspElasticAdapter(SoftwareAdapter):
     """Translate a ParamBundle into the VASP elastic WorkChain inputs."""
 
@@ -85,18 +68,14 @@ class VaspElasticAdapter(SoftwareAdapter):
         # counterpart of the official ABACUS elastic example's
         # ``calculation relax``. The protocol may set it to False for
         # clamped-ion constants.
-        inputs["relax_internal"] = orm.Bool(
-            elastic_proto.get("relax_internal", True)
-        )
+        inputs["relax_internal"] = orm.Bool(elastic_proto.get("relax_internal", True))
         # Fully relax the lattice (vasp.relax, cell + ions) before the
         # deformations — default True, the VASP counterpart of the
         # official ABACUS elastic example's ``prepare_elastic.sh``
         # (``../OPT/``, ``calculation cell-relax``). The optional
         # ``relax_settings`` dict is forwarded verbatim to the
         # VaspRelaxWorkChain RelaxOptions.
-        inputs["relax_lattice"] = orm.Bool(
-            elastic_proto.get("relax_lattice", True)
-        )
+        inputs["relax_lattice"] = orm.Bool(elastic_proto.get("relax_lattice", True))
         # Fail hard when the lattice relaxation fails? Default False: the
         # 24 strained cells are still computed from the input structure and
         # the result is flagged (``lattice_relaxed: false``). Set
@@ -105,30 +84,38 @@ class VaspElasticAdapter(SoftwareAdapter):
         inputs["require_lattice_relax"] = orm.Bool(
             elastic_proto.get("require_lattice_relax", False)
         )
-        # Relaxation settings of the ``vasp.relax`` lattice-relaxation child.
-        # The protocol block uses the SAME vocabulary as
-        # ``parameters/relax.yml``'s vasp block (``relax_type`` /
-        # ``relax_method`` / ``max_ionic_steps`` / ``force_cutoff`` / ...),
-        # which is translated onto aiida-vasp's RelaxOptions here; a raw
-        # ``relax_settings`` dict (RelaxOptions keys) overrides the
-        # translation. Without either, the workchain sends the plugin
-        # defaults (full cell + ions relaxation).
-        relax_block = {
-            key: value
-            for key, value in elastic_proto.items()
-            if key in _RELAX_PROTOCOL_KEYS
-        }
-        if _has_relax_spec(relax_block):
+        # Relaxation settings of the ``vasp.relax`` lattice-relaxation child,
+        # from the protocol's ``vasp.lattice_relax`` block (same vocabulary as
+        # ``parameters/relax.yml`` — relax_type / relax_method /
+        # max_ionic_steps / force_cutoff / meta_convergence / volume_convergence
+        # — translated onto aiida-vasp's RelaxOptions here).
+        lattice_block = dict(elastic_proto.get("lattice_relax") or {})
+        if lattice_block:
             from ..relax.vasp import relax_settings_from_protocol
 
-            settings = relax_settings_from_protocol(
-                relax_block, structure.get_cell_volume()
-            )
-            inputs["relax_settings"] = orm.Dict(dict=settings)
-        elif relax_block.get("relax_settings"):
-            # Only the raw RelaxOptions dict was given.
             inputs["relax_settings"] = orm.Dict(
-                dict=relax_block["relax_settings"]
+                dict=relax_settings_from_protocol(
+                    lattice_block, structure.get_cell_volume()
+                )
+            )
+        # RelaxOptions of the strained-cell children (each one is a
+        # ``vasp.relax`` run with the cell held at the strained lattice).
+        # The ``child_relax`` block uses the SAME vocabulary as
+        # ``parameters/relax.yml`` (relax_type / relax_method /
+        # max_ionic_steps / force_cutoff / meta_convergence / ...) and is
+        # translated onto aiida-vasp's RelaxOptions here — ``force_cutoff``
+        # (= EDIFFG < 0) is the knob that decides whether the internal
+        # coordinates actually relax: for a soft-mode metal (α-U:
+        # C44/C55/C66) a loose criterion leaves the cell clamped and the
+        # shear constants come out ~2× too stiff.
+        child_block = dict(elastic_proto.get("child_relax") or {})
+        if child_block:
+            from ..relax.vasp import relax_settings_from_protocol
+
+            inputs["child_relax_settings"] = orm.Dict(
+                dict=relax_settings_from_protocol(
+                    child_block, structure.get_cell_volume()
+                )
             )
         return inputs
 

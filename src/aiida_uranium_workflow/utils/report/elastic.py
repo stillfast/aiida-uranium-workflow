@@ -108,6 +108,19 @@ def generate_summary_table(output_params: Dict[str, Any], workflow_type: str) ->
         f"| Universal anisotropy | {_fmt(output_params.get('universal_anisotropy'))} |",
         f"| Poisson ratio | {_fmt(output_params.get('poisson_ratio'))} |",
     ]
+    source = output_params.get("equilibrium_structure_source")
+    if source is not None:
+        label = {
+            "lattice_relax": "relaxed (lattice_relax)",
+            "input": "INPUT cell (not relaxed)",
+        }.get(source, source)
+        lines.append(f"| deformed lattice | {label} |")
+        if source == "input":
+            lines.append(
+                "| NOTE | the strains were applied to the INPUT cell — the "
+                "lattice pre-relaxation was skipped or failed, so the "
+                "constants are not evaluated at the equilibrium lattice |"
+            )
     if output_params.get("diagonal_only"):
         lines.append(
             "| NOTE | diagonal-only (energy method; off-diagonal needs "

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 pytest_plugins = ["aiida.tools.pytest_fixtures"]
 
+from types import SimpleNamespace
+
 import pytest
 
 from aiida import orm
@@ -26,16 +28,33 @@ def _structure():
     return orm.StructureData(ase=bulk("U", "bcc", a=3.45))
 
 
-def _instantiate_abacus(aiida_profile_clean, relax_internal):
+def _instantiate_abacus(
+    aiida_profile_clean,
+    relax_internal,
+    relax_lattice=False,
+    require_lattice_relax=False,
+    relax_settings=None,
+    child_relax_settings=None,
+    base=None,
+):
     runner = get_manager().get_runner()
-    return instantiate_process(
-        runner,
-        AbacusElasticWorkChain,
+    inputs = dict(
         structure=_structure(),
         norm_strains=orm.List(list=[-0.01, -0.005, 0.005, 0.01]),
         shear_strains=orm.List(list=[-0.01, -0.005, 0.005, 0.01]),
         relax_internal=orm.Bool(relax_internal),
     )
+    if relax_lattice:
+        inputs["relax_lattice"] = orm.Bool(True)
+    if require_lattice_relax:
+        inputs["require_lattice_relax"] = orm.Bool(True)
+    if relax_settings is not None:
+        inputs["relax_settings"] = orm.Dict(dict=relax_settings)
+    if child_relax_settings is not None:
+        inputs["child_relax_settings"] = orm.Dict(dict=child_relax_settings)
+    if base is not None:
+        inputs["base"] = base
+    return instantiate_process(runner, AbacusElasticWorkChain, **inputs)
 
 
 def _instantiate_fleur(aiida_profile_clean, relax_internal, aiida_localhost):
@@ -66,20 +85,23 @@ def _instantiate_fleur(aiida_profile_clean, relax_internal, aiida_localhost):
     )
 
 
-
-
 def _fake_strain_voigts():
     """The 24 DeformedStructureSet Voigt strains (norm + shear, ±1/±0.5%)."""
     import numpy as np
+
     voigts = []
     for idx in [(0, 0), (1, 1), (2, 2)]:
         for a in [-0.01, -0.005, 0.005, 0.01]:
-            sv = np.zeros(6); sv[idx[0]] = a; voigts.append(sv)
+            sv = np.zeros(6)
+            sv[idx[0]] = a
+            voigts.append(sv)
     for idx in [(0, 1), (0, 2), (1, 2)]:
         for a in [-0.01, -0.005, 0.005, 0.01]:
-            sv = np.zeros(6); sv[{(0, 1): 5, (0, 2): 4, (1, 2): 3}[idx]] = 2 * a
+            sv = np.zeros(6)
+            sv[{(0, 1): 5, (0, 2): 4, (1, 2): 3}[idx]] = 2 * a
             voigts.append(sv)
     return voigts
+
 
 def _run_generate(process):
     process.generate_deformations()
@@ -132,6 +154,128 @@ class TestAbacusRelaxInternal:
         base = {"abacus": {"parameters": orm.Dict(dict={"input": {}})}}
         inputs = process._scf_inputs_for(structure, base)
         assert inputs["abacus"]["structure"] is structure
+
+    def test_child_relax_settings_reach_the_children(self, aiida_profile_clean):
+        """``child_relax_settings`` is the RelaxOptions of the strained cells."""
+        process = _instantiate_abacus(
+            aiida_profile_clean,
+            True,
+            child_relax_settings={"relax_type": "positions", "force_cutoff": 0.001},
+        )
+        structure = _run_generate(process)
+        base = {"abacus": {"parameters": orm.Dict(dict={"input": {}})}}
+        inputs = process._relax_inputs_for(structure, base)
+        assert inputs["relax_settings"].get_dict()["force_cutoff"] == 0.001
+
+
+class TestAbacusLatticeRelax:
+    """``relax_lattice`` — the abacus.relax pre-relaxation of the input cell."""
+
+    def test_spec_has_the_lattice_relax_inputs(self):
+        ports = AbacusElasticWorkChain.spec().inputs
+        for name in ("relax_lattice", "require_lattice_relax", "relax_settings"):
+            assert name in ports
+        assert AbacusElasticWorkChain.exit_codes.ERROR_RELAX.status == 310
+
+    def test_initialize_skips_when_false(self, aiida_profile_clean):
+        process = _instantiate_abacus(aiida_profile_clean, True, relax_lattice=False)
+        calls = []
+
+        def fake_submit(wc_cls, **inputs):
+            calls.append(wc_cls)
+            return SimpleNamespace(pk=999, process_label="AbacusRelaxWorkChain")
+
+        process.submit = fake_submit
+        process.initialize()
+        assert calls == []
+        assert not hasattr(process.ctx, "lattice_relax")
+
+    def test_initialize_submits_abacus_relax(self, aiida_profile_clean):
+        process = _instantiate_abacus(
+            aiida_profile_clean,
+            True,
+            relax_lattice=True,
+            relax_settings={
+                "relax_type": "positions_cell",
+                "relax_method": "cg",
+                "max_ionic_steps": 50,
+                "force_cutoff": 0.05,
+                "stress_cutoff": 1.0,
+            },
+            base={
+                "abacus": {
+                    "code": orm.Str("code"),
+                    "parameters": orm.Dict(dict={"input": {}}),
+                }
+            },
+        )
+        calls, ctx_calls = [], []
+
+        def fake_submit(wc_cls, **inputs):
+            calls.append((wc_cls, inputs))
+            return SimpleNamespace(pk=999, process_label="AbacusRelaxWorkChain")
+
+        process.submit = fake_submit
+        process.to_context = lambda **kw: ctx_calls.append(kw)
+        process.initialize()
+
+        assert len(calls) == 1
+        wc_cls, relax_inputs = calls[0]
+        from aiida_abacus.workflows.relax import AbacusRelaxWorkChain
+
+        assert wc_cls is AbacusRelaxWorkChain
+        # structure at the top level, SCF base in the ``base`` namespace
+        assert relax_inputs["structure"] is process.inputs.structure
+        assert "structure" not in relax_inputs["base"]["abacus"]
+        assert relax_inputs["metadata"]["label"] == "lattice_relax"
+        settings = relax_inputs["relax_settings"].get_dict()
+        assert settings["relax_type"] == "positions_cell"  # cell + ions
+        assert settings["force_cutoff"] == 0.05
+        assert settings["max_ionic_steps"] == 50
+        # the running child is registered under ``lattice_relax``
+        assert list(ctx_calls[0]) == ["lattice_relax"]
+
+    def test_generate_deformations_uses_the_relaxed_structure(
+        self, aiida_profile_clean
+    ):
+        from ase.build import bulk
+
+        process = _instantiate_abacus(aiida_profile_clean, True, relax_lattice=True)
+        relaxed = orm.StructureData(ase=bulk("U", "bcc", a=3.5))
+        process.ctx.lattice_relax = SimpleNamespace(
+            is_finished_ok=True,
+            outputs=SimpleNamespace(structure=relaxed),
+        )
+        assert process._equilibrium_structure() is relaxed
+        assert process.generate_deformations() is None
+        assert process.ctx.equilibrium_structure_source == "lattice_relax"
+        assert len(process.ctx.deformed_structures) == 24
+
+    def test_generate_deformations_continues_when_relax_failed(
+        self, aiida_profile_clean
+    ):
+        process = _instantiate_abacus(aiida_profile_clean, True, relax_lattice=True)
+        process.ctx.lattice_relax = SimpleNamespace(
+            pk=1, is_finished_ok=False, exit_status=300
+        )
+        assert process.generate_deformations() is None
+        assert process.ctx.equilibrium_structure_source == "input"
+        assert len(process.ctx.deformed_structures) == 24
+
+    def test_generate_deformations_aborts_when_required(self, aiida_profile_clean):
+        process = _instantiate_abacus(
+            aiida_profile_clean,
+            True,
+            relax_lattice=True,
+            require_lattice_relax=True,
+        )
+        process.ctx.lattice_relax = SimpleNamespace(
+            pk=1, is_finished_ok=False, exit_status=300
+        )
+        assert (
+            process.generate_deformations()
+            == AbacusElasticWorkChain.exit_codes.ERROR_RELAX
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +374,9 @@ class TestFleurRelaxInternal:
         assert exit_code is None
         assert "output_parameters" in getattr(process, "_outputs", {})
 
-    def test_gather_reads_scf_energy_without_relax(self, aiida_profile_clean, aiida_localhost):
+    def test_gather_reads_scf_energy_without_relax(
+        self, aiida_profile_clean, aiida_localhost
+    ):
         from types import SimpleNamespace
 
         process = _instantiate_fleur(aiida_profile_clean, False, aiida_localhost)

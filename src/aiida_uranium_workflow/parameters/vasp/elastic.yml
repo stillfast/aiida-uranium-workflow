@@ -1,0 +1,40 @@
+# VASP presets for the elastic workflow (``parameters/vasp/elastic.yml``).
+#
+# The elastic workflow reads ``parameters/vasp/elastic.yml``
+# (``PRESET_SUBKEYS["vasp"] = "elastic"``), NOT ``parameters/vasp/scf.yml``:
+# the SCF presets carry ``nsw: 0`` because they are meant for single-point
+# runs, and that tag would follow the structure into the ``vasp.relax``
+# lattice-relaxation child and turn it into a static calculation (aiida-vasp
+# applies the ``incar`` namespace after its relax set-functions). The
+# workflow strips NSW / IBRION / ISIF / EDIFFG as a second line of defence,
+# but the preset should not carry them in the first place.
+#
+# What stays here: everything that is SCF physics (``parameters.incar``
+# without the relax tags), the POTCAR family / mapping and the k-point
+# density. The relaxation behaviour of the strained cells is injected by
+# the WorkChain (ISIF=2 + IBRION=2 + NSW=50 when ``relax_internal`` is true,
+# ISIF=4 + IBRION=-1 fixed-lattice otherwise), and the lattice relaxation
+# uses ``relax_lattice`` / ``relax_settings`` from ``parameters/elastic.yml``.
+
+standard:
+  parameters:
+    incar:
+      system: bcc-uranium
+      ispin: 1
+      prec: Accurate
+      lmaxmix: 6
+      lasph: true
+      lreal: false
+      lcharg: false
+      lwave: false
+
+      encut: 400
+      ismear: 1
+      sigma: 0.2
+      ediff: 1e-6
+      nelm: 100
+
+  potential_family: "PBE"
+  potential_mapping:
+    U: "U"
+  kpoints_spacing: 0.0318

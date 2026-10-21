@@ -107,6 +107,7 @@ BANDDOS_CLASS_TO_BACKEND: dict[str, str] = {
 }
 RELAX_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusRelaxWorkChain": "abacus",
+    "VaspRelaxWorkChain": "vasp",
     "FleurRelaxWorkChain": "fleur",
     "PwRelaxWorkChain": "qe",
 }
@@ -121,6 +122,7 @@ ELASTIC_CUBIC_CLASS_TO_BACKEND: dict[str, str] = {
 }
 PHONOPY_CLASS_TO_BACKEND: dict[str, str] = {
     "AbacusPhonopyWorkChain": "abacus",
+    "VaspPhonopyWorkChain": "vasp",
     "FleurPhonopyWorkChain": "fleur",
     "QePhonopyWorkChain": "qe",
 }
@@ -178,7 +180,12 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         name="relax",
         class_to_backend=RELAX_CLASS_TO_BACKEND,
         generate_report=generate_relax_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf", "qe": "scf"},
+        backend_to_key={
+            "abacus": "scf",
+            "vasp": "scf",
+            "fleur": "scf",
+            "qe": "scf",
+        },
     ),
     "elastic": MethodSpec(
         name="elastic",
@@ -201,7 +208,12 @@ METHOD_SPECS: dict[str, MethodSpec] = {
         name="phonopy",
         class_to_backend=PHONOPY_CLASS_TO_BACKEND,
         generate_report=generate_phonopy_report,
-        backend_to_key={"abacus": "scf", "fleur": "scf", "qe": "scf"},
+        backend_to_key={
+            "abacus": "scf",
+            "vasp": "scf",
+            "fleur": "scf",
+            "qe": "scf",
+        },
     ),
     "eos": MethodSpec(
         name="eos",

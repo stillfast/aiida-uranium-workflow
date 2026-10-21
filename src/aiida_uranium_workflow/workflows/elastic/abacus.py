@@ -7,15 +7,29 @@ Generates 24 deformed structures (Materials Project methodology:
 elastic tensor via pymatgen's ``ElasticTensor.from_independent_strains``.
 Aggregate moduli (K, G, anisotropy, Poisson) are derived from it.
 
+**Lattice relaxation** (``relax_lattice``): before the deformations are
+generated, the input structure can be fully relaxed (cell + ions) by an
+``abacus.relax`` child with the protocol's ``lattice_relax`` RelaxOptions
+— the ABACUS counterpart of the official example's
+``prepare_elastic.sh``/``../OPT/`` cell-relax, and the same layout as the
+VASP side. A failed pre-relaxation does not abort the workflow: the
+strained cells are computed from the input structure and the result
+records ``equilibrium_structure_source: input`` / ``lattice_relaxed:
+false`` (``require_lattice_relax=True`` aborts with ``ERROR_RELAX``
+instead).
+
 By default the internal atomic coordinates are relaxed under each
 strain (``relax_internal``, an ``abacus.relax`` child with
 ``relax_type='positions'`` — the cell stays fixed at the strained
-lattice). This gives the physically relevant "relaxed" elastic
-constants and matches the official ABACUS elastic example (one
-``calculation relax`` per deformed cell). For cells without free
-internal coordinates (e.g. the 2-atom bcc U cell) the relaxation is a
-no-op. Set ``relax_internal=False`` for the clamped-ion constants
-(fixed-lattice SCF children, the previous behaviour).
+lattice, RelaxOptions from the protocol's ``child_relax`` block). This
+gives the physically relevant "relaxed" elastic constants and matches
+the official ABACUS elastic example (one ``calculation relax`` per
+deformed cell). The force criterion matters: a ±1 % shear of a soft-mode
+metal (α-U) develops only ~0.03 eV/Å, so a loose ``force_cutoff`` leaves
+the cell clamped and the shear constants ~2× too stiff. For cells
+without free internal coordinates (e.g. the 2-atom bcc U cell) the
+relaxation is a no-op. Set ``relax_internal=False`` for the clamped-ion
+constants (fixed-lattice SCF children).
 
 The SCF base comes from ``parameters/abacus/scf.yml``; the strain lists
 come from the workflow protocol (``parameters/elastic.yml``).
@@ -28,6 +42,12 @@ Layout::
     ├── norm_strains    (List) — normal strain magnitudes
     ├── shear_strains   (List) — shear strain magnitudes
     ├── relax_internal  (Bool) — relax internal coords under strain (default True)
+    ├── relax_lattice   (Bool) — full lattice pre-relaxation (default False)
+    ├── require_lattice_relax (Bool) — abort when the pre-relaxation fails
+    ├── relax_settings  (Dict) — RelaxOptions of the lattice pre-relaxation
+    │                            (parameters/elastic.yml ``abacus.lattice_relax``)
+    ├── child_relax_settings (Dict) — RelaxOptions of the strained cells
+    │                            (``abacus.child_relax``)
     outputs
     └── output_parameters (Dict) — elastic tensor + moduli (GPa)
 """
@@ -57,6 +77,20 @@ DEFAULT_RELAX_SETTINGS: Dict[str, Any] = {
 }
 
 
+#: Fallback RelaxOptions of the lattice pre-relaxation child (used when the
+#: protocol has no ``abacus.lattice_relax`` block): full cell + ions relax.
+DEFAULT_LATTICE_RELAX_SETTINGS: Dict[str, Any] = {
+    "relax_type": "positions_cell",
+    "relax_method": "cg",
+    "max_ionic_steps": 50,
+    "force_cutoff": 0.03,
+    "stress_cutoff": 1.0,
+    "meta_convergence": True,
+    "volume_convergence": 0.01,
+    "max_meta_convergence_iterations": 5,
+}
+
+
 class AbacusElasticWorkChain(WorkChain):
     """Compute elastic constants of a structure with ABACUS (stress method)."""
 
@@ -83,9 +117,45 @@ class AbacusElasticWorkChain(WorkChain):
             valid_type=orm.Dict,
             required=False,
             help=(
-                "``abacus.relax`` relax_settings of the internal-coordinate "
-                "relaxation (relax_type / relax_method / max_ionic_steps / "
-                "force_cutoff / stress_cutoff / …). Defaults to "
+                "``abacus.relax`` RelaxOptions of the *lattice* pre-relaxation "
+                "(the ``abacus.lattice_relax`` block of "
+                "``parameters/elastic.yml``: relax_type / relax_method / "
+                "max_ionic_steps / force_cutoff / stress_cutoff / "
+                "meta_convergence / volume_convergence / …)."
+            ),
+        )
+        spec.input(
+            "relax_lattice",
+            valid_type=orm.Bool,
+            required=False,
+            help=(
+                "Fully relax the lattice (cell + ions) with an "
+                "``abacus.relax`` child before generating the deformations, "
+                "and build the strained cells from the relaxed structure — "
+                "the ABACUS counterpart of the official elastic example's "
+                "``prepare_elastic.sh``/``../OPT/`` cell-relax. Default False: "
+                "deform the input structure as-is."
+            ),
+        )
+        spec.input(
+            "require_lattice_relax",
+            valid_type=orm.Bool,
+            required=False,
+            help=(
+                "Abort with ``ERROR_RELAX`` when the lattice relaxation fails. "
+                "Default False: the strained cells are still computed from the "
+                "input structure and the result records "
+                "``equilibrium_structure_source: input``."
+            ),
+        )
+        spec.input(
+            "child_relax_settings",
+            valid_type=orm.Dict,
+            required=False,
+            help=(
+                "``abacus.relax`` RelaxOptions of the strained-cell children "
+                "(the ``abacus.child_relax`` block of "
+                "``parameters/elastic.yml``). Defaults to "
                 "DEFAULT_RELAX_SETTINGS (positions only, cg, 50 steps, "
                 "force_cutoff 0.05 eV/Å)."
             ),
@@ -109,6 +179,7 @@ class AbacusElasticWorkChain(WorkChain):
         spec.output("deformed_structures", valid_type=orm.List, required=False)
 
         spec.outline(
+            cls.initialize,
             cls.generate_deformations,
             cls.submit_scfs,
             cls.gather_results,
@@ -117,6 +188,59 @@ class AbacusElasticWorkChain(WorkChain):
         spec.exit_code(0, "SUCCESS", "Elastic constants computed.")
         spec.exit_code(300, "ERROR_CHILD", "An SCF child failed.")
         spec.exit_code(305, "ERROR_PARSER", "Failed to fit elastic tensor.")
+        spec.exit_code(310, "ERROR_RELAX", "The lattice relaxation child failed.")
+
+    def initialize(self):
+        """Optionally relax the lattice (cell + ions) before the deformations.
+
+        With ``relax_lattice`` an ``abacus.relax`` child (the plugin relax
+        WorkChain) is submitted with the protocol's ``lattice_relax``
+        RelaxOptions; the engine waits for it, so ``ctx.lattice_relax`` holds
+        the finished child in :meth:`generate_deformations`.
+        """
+        relax_lattice = (
+            self.inputs.relax_lattice.value if "relax_lattice" in self.inputs else False
+        )
+        if not relax_lattice:
+            self.report("skipping lattice relaxation (relax_lattice=False)")
+            return
+
+        base = dict(self.inputs.base) if "base" in self.inputs else {}
+        settings = (
+            dict(self.inputs.relax_settings.get_dict())
+            if "relax_settings" in self.inputs
+            else dict(DEFAULT_LATTICE_RELAX_SETTINGS)
+        )
+        relax_inputs = {
+            "structure": self.inputs.structure,
+            "base": base,
+            "relax_settings": orm.Dict(dict=settings),
+            "metadata": {
+                "label": "lattice_relax",
+                "description": (
+                    "Full lattice relaxation (cell + ions) of the input "
+                    "structure before the elastic deformations."
+                ),
+            },
+        }
+        running = self.submit(_PluginRelaxWorkChain, **relax_inputs)
+        self.report(
+            f"submitted lattice relaxation {running.process_label} pk={running.pk}"
+        )
+        self.to_context(lattice_relax=running)
+
+    def _equilibrium_structure(self):
+        """Structure the deformations are applied to (relaxed or input)."""
+        relax = getattr(self.ctx, "lattice_relax", None)
+        if relax is not None and relax.is_finished_ok:
+            try:
+                return relax.outputs.structure
+            except (KeyError, AttributeError):
+                self.report(
+                    "lattice relaxation finished without a relaxed structure "
+                    "output — using the input structure"
+                )
+        return self.inputs.structure
 
     def generate_deformations(self):
         """Create the deformed structures and record their strains."""
@@ -128,16 +252,46 @@ class AbacusElasticWorkChain(WorkChain):
         norm = list(self.inputs.norm_strains.get_list())
         shear = list(self.inputs.shear_strains.get_list())
 
+        relax_lattice = (
+            self.inputs.relax_lattice.value if "relax_lattice" in self.inputs else False
+        )
+        if relax_lattice:
+            relax = getattr(self.ctx, "lattice_relax", None)
+            if relax is None or not relax.is_finished_ok:
+                if relax is None:
+                    message = "lattice relaxation was never submitted"
+                else:
+                    message = (
+                        f"lattice relaxation <{relax.pk}> finished with "
+                        f"exit status {relax.exit_status}"
+                    )
+                require = (
+                    self.inputs.require_lattice_relax.value
+                    if "require_lattice_relax" in self.inputs
+                    else False
+                )
+                if require:
+                    self.report(f"{message} — aborting (require_lattice_relax=True)")
+                    return self.exit_codes.ERROR_RELAX
+                self.report(
+                    f"{message} — CONTINUING with the input structure (NOT "
+                    "relaxed); the reported tensor is not on the equilibrium "
+                    "lattice. Set require_lattice_relax=true to abort instead."
+                )
+
         deformations = generate_deformations(norm, shear)
         self.ctx.strain_voigts = [d[0] for d in deformations]
         self.ctx.deformation_labels = [d[2] for d in deformations]
 
-        deformed = [
-            apply_deformation_matrix(self.inputs.structure, d[1]) for d in deformations
-        ]
+        structure = self._equilibrium_structure()
+        self.ctx.equilibrium_structure_source = (
+            "lattice_relax" if structure is not self.inputs.structure else "input"
+        )
+        deformed = [apply_deformation_matrix(structure, d[1]) for d in deformations]
         self.ctx.deformed_structures = deformed
         self.report(
             f"generated {len(deformed)} deformed structures "
+            f"from the {self.ctx.equilibrium_structure_source} structure "
             f"(norm={norm}, shear={shear})"
         )
 
@@ -203,17 +357,13 @@ class AbacusElasticWorkChain(WorkChain):
         params["input"]["calculation"] = "relax"
         params["input"]["cal_stress"] = 1  # stress output stays on
 
-        base_ns: Dict[str, Any] = {
-            k: v for k, v in base.items() if k != "abacus"
-        }
-        base_ns["abacus"] = {
-            k: v for k, v in base_abacus.items() if k != "parameters"
-        }
+        base_ns: Dict[str, Any] = {k: v for k, v in base.items() if k != "abacus"}
+        base_ns["abacus"] = {k: v for k, v in base_abacus.items() if k != "parameters"}
         base_ns["abacus"]["parameters"] = orm.Dict(dict=params)
 
         settings = (
-            self.inputs.relax_settings
-            if "relax_settings" in self.inputs
+            self.inputs.child_relax_settings
+            if "child_relax_settings" in self.inputs
             else orm.Dict(dict=DEFAULT_RELAX_SETTINGS)
         )
         return {
@@ -270,6 +420,10 @@ class AbacusElasticWorkChain(WorkChain):
                         ],
                         "stress_tensors": [list(s) for s in stress_tensors],
                         "crystal_system": crystal_system_of(self.inputs.structure),
+                        # which lattice the deformations were applied to
+                        "equilibrium_structure_source": getattr(
+                            self.ctx, "equilibrium_structure_source", "input"
+                        ),
                     }
                 ),
             ),
@@ -293,4 +447,7 @@ def _combine_elastic_result(fit_data):
         data["stress_tensors"],
         crystal_system=data.get("crystal_system"),
     )
+    source = data.get("equilibrium_structure_source", "input")
+    result["equilibrium_structure_source"] = source
+    result["lattice_relaxed"] = source == "lattice_relax"
     return orm.Dict(dict=result)

@@ -188,7 +188,15 @@ def apply_deformation_matrix(structure, deformation: np.ndarray):
     from aiida.orm import StructureData
 
     cell = np.asarray(structure.cell, dtype=float)
-    new_cell = np.asarray(deformation, dtype=float) @ cell
+    # ``StructureData.cell`` rows are the lattice vectors; the deformation
+    # gradient F acts on *column* vectors (a'ᵢ = F·aᵢ), i.e. F is applied on
+    # the right with its transpose:  L' = L · Fᵀ.  Applying F on the left
+    # (F·L) applies the *transposed* strain whenever L is not isotropic:
+    # for α-U (a=2.80, b=5.84, c=4.91 Å) the xy shear then came out
+    # b/a ≈ 2.1× too large, xz c/a ≈ 1.75× too large and yz c/b ≈ 0.84×
+    # too small, so C66/C55/C44 were wrong by exactly those ratios while
+    # the normal strains (diagonal F) were unaffected.
+    new_cell = cell @ np.asarray(deformation, dtype=float).T
     sd = StructureData(cell=new_cell, pbc=True)
     for site in structure.sites:
         frac = np.linalg.solve(cell.T, np.asarray(site.position, dtype=float))

@@ -61,11 +61,33 @@ _VASP_MODES = {
 
 
 def _port(ports, label: str) -> Any:
-    """Fetch ``ports[label]`` by item or attribute, tolerating absence."""
+    """Fetch ``ports[label]``, unwrapping nested namespaces.
+
+    AiiDA exposes the plugin's ``relax.structure`` output as the namespace
+    ``relax`` holding ``structure`` (``node.outputs.relax.structure``), so a
+    dotted label has to be traversed part by part. Looking up the literal
+    ``"relax__structure"`` instead would hit AiiDA's deprecated
+    double-underscore dereferencing (``AiidaDeprecationWarning``).
+    """
+    # 1. a flat link label (``structure`` / ``misc`` / ``relax_settings``)
     try:
         return ports[label]
     except (AttributeError, KeyError, TypeError):
         pass
+
+    # 2. nested namespace: ``a.b`` -> ports['a']['b']
+    parts = label.split(".")
+    if len(parts) > 1:
+        value = ports
+        try:
+            for part in parts:
+                value = value[part]
+        except (AttributeError, KeyError, TypeError):
+            value = None
+        if value is not None:
+            return value
+
+    # 3. attribute access (single, undotted label)
     try:
         return getattr(ports, label)
     except (AttributeError, KeyError, TypeError):
@@ -211,16 +233,14 @@ def _derive_from_node(node, workflow_type: str) -> Dict[str, Any]:
                 "energy_units": "eV",
             }
     elif workflow_type == "vasp":
-        # VaspRelaxWorkChain: the plugin relax WorkChain exposes the called
-        # VaspWorkChain's outputs (``structure`` / ``misc``) and attaches
-        # ``relax.structure``; the energy comes from the final single-point
-        # calculation that aiida-vasp runs whenever the cell was relaxed
-        # (the relaxed geometry's energy in a fixed basis set).
+        # VaspRelaxWorkChain exposes the called VaspWorkChain's outputs
+        # (``misc``, and ``structure`` when the last run parsed one) and
+        # attaches the relaxed geometry as ``relax.structure`` — a nested
+        # output, i.e. ``node.outputs.relax.structure``. ``_port`` unwraps
+        # the dotted label; the deprecated ``relax__structure`` spelling is
+        # deliberately not used (AiidaDeprecationWarning since aiida-core 2).
         structure = None
-        # VaspRelaxWorkChain attaches the relaxed geometry as
-        # ``relax__structure`` (exposed ``relax.structure``); older nodes and
-        # ``perform=False`` runs carry a plain ``structure``.
-        for label in ("relax__structure", "structure", "relax.structure"):
+        for label in ("relax.structure", "structure"):
             structure = _output(node, label)
             if structure is not None:
                 break

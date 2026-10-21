@@ -1,7 +1,11 @@
-"""phonopy-workflow WorkChains (ABACUS / FLEUR / QE).
+"""phonopy-workflow WorkChains (ABACUS / VASP / FLEUR / QE).
 
 * :mod:`.abacus` :class:`AbacusPhonopyWorkChain` — frozen-phonon
   phonon bands / DOS with ABACUS forces + phonopy post-processing.
+* :mod:`.vasp` :class:`VaspPhonopyWorkChain` — frozen-phonon phonon
+  bands / DOS with VASP forces (static ``IBRION=-1``/``NSW=0``/``ISIF=2``
+  supercell runs, forces from ``misc['forces']``) + phonopy
+  post-processing.
 * :mod:`.fleur` :class:`FleurPhonopyWorkChain` — frozen-phonon
   phonon bands / DOS with FLEUR forces (density-mode SCF with
   ``l_f`` forces from ``output_parameters['force_atoms']``) + phonopy
@@ -15,5 +19,11 @@
 from .abacus import AbacusPhonopyWorkChain
 from .fleur import FleurPhonopyWorkChain
 from .qe import QePhonopyWorkChain
+from .vasp import VaspPhonopyWorkChain
 
-__all__ = ["AbacusPhonopyWorkChain", "FleurPhonopyWorkChain", "QePhonopyWorkChain"]
+__all__ = [
+    "AbacusPhonopyWorkChain",
+    "FleurPhonopyWorkChain",
+    "QePhonopyWorkChain",
+    "VaspPhonopyWorkChain",
+]

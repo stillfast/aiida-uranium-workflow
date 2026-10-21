@@ -433,6 +433,67 @@ def test_report_derive_from_vasp_node():
     assert data["mode"] == "volume-only relax (ISIF=7)"
 
 
+def test_report_reads_nested_relax_structure_without_deprecated_label():
+    """The plugin attaches the relaxed geometry as the *nested* output
+    ``relax.structure`` (``node.outputs.relax.structure``).
+
+    Looking the literal ``relax__structure`` up instead works via AiiDA's
+    deprecated double-underscore dereferencing (``AiidaDeprecationWarning``,
+    removed in aiida-core 3) — the report helper must traverse the dotted
+    label instead.
+    """
+    from aiida_uranium_workflow.utils.report.relax import _derive_from_node
+    from ase.build import bulk
+
+    import numpy as np
+
+    cell = np.asarray(bulk("U", "bcc", a=3.45).cell)
+
+    class _Struct:
+        def get_cell_volume(self):
+            return float(np.linalg.det(cell))
+
+    _Struct.cell = cell
+
+    accessed: list[str] = []
+
+    class _Outputs(dict):
+        """Mimic NodeLinksManager: flat keys + nested namespaces, no dunders."""
+
+        def __getitem__(self, key):
+            accessed.append(key)
+            if "__" in key:
+                raise AssertionError(
+                    f"deprecated double-underscore label accessed: {key!r}"
+                )
+            return super().__getitem__(key)
+
+        def __getattr__(self, item):
+            return self[item]
+
+    class _Dict:
+        def __init__(self, data):
+            self._data = data
+
+        def get_dict(self):
+            return self._data
+
+    outputs = _Outputs(
+        relax={"structure": _Struct()},
+        misc=_Dict({"total_energies": {"energy_extrapolated": [-1.0, -2.0]}}),
+    )
+    node = type("Node", (), {"outputs": outputs})()
+    node.inputs = {
+        "relax_settings": _Dict({"positions": True, "shape": True, "volume": True})
+    }
+
+    data = _derive_from_node(node, "vasp")
+    assert data["energy"] == pytest.approx(-2.0)  # last ionic step
+    assert data["volume"] == pytest.approx(float(np.linalg.det(cell)))
+    assert data["mode"] == "full relax (positions + cell, ISIF=3)"
+    assert not any("__" in label for label in accessed)
+
+
 def test_report_mode_for_no_relax():
     from aiida_uranium_workflow.utils.report.relax import _vasp_mode
 
@@ -476,5 +537,7 @@ def test_settings_are_complete_for_the_workchain_attribute_reads():
 
 
 def test_none_relax_type_keeps_perform_false():
-    settings = relax_settings_from_protocol({"relax_type": "none"}, structure_volume=100.0)
+    settings = relax_settings_from_protocol(
+        {"relax_type": "none"}, structure_volume=100.0
+    )
     assert settings["perform"] is False

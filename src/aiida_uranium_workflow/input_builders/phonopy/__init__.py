@@ -1,8 +1,11 @@
-"""phonopy-workflow input builders (ABACUS / FLEUR / QE).
+"""phonopy-workflow input builders (ABACUS / VASP / FLEUR / QE).
 
 * :mod:`.abacus` :class:`AbacusPhonopyAdapter` — wraps
   ``AbacusPhonopyWorkChain`` (ABACUS SCF + forces for displaced
   supercells, phonopy band / DOS post-processing).
+* :mod:`.vasp` :class:`VaspPhonopyAdapter` — wraps
+  ``VaspPhonopyWorkChain`` (force-only static VASP runs for the
+  displaced supercells + phonopy band / DOS post-processing).
 * :mod:`.fleur` :class:`FleurPhonopyAdapter` — wraps
   ``FleurPhonopyWorkChain`` (FLEUR SCF in ``density`` mode with
   ``l_f`` forces + phonopy post-processing).
@@ -15,5 +18,11 @@
 from .abacus import AbacusPhonopyAdapter
 from .fleur import FleurPhonopyAdapter
 from .qe import QePhonopyAdapter
+from .vasp import VaspPhonopyAdapter
 
-__all__ = ["AbacusPhonopyAdapter", "FleurPhonopyAdapter", "QePhonopyAdapter"]
+__all__ = [
+    "AbacusPhonopyAdapter",
+    "FleurPhonopyAdapter",
+    "QePhonopyAdapter",
+    "VaspPhonopyAdapter",
+]

@@ -4,9 +4,9 @@ Binds the phonopy workflow to:
 
 * ``parameters/phonopy.yml`` (protocol — phonopy-specific settings per
   preset: supercell / primitive matrix, band-path mode, DOS, ...)
-* ``parameters/abacus/scf.yml`` / ``parameters/fleur/scf.yml`` /
-  ``parameters/qe/scf.yml`` (per-backend SCF base, shared
-  with banddos / elastic / relax / eos)
+* ``parameters/abacus/scf.yml`` / ``parameters/vasp/scf.yml`` /
+  ``parameters/fleur/scf.yml`` / ``parameters/qe/scf.yml``
+  (per-backend SCF base, shared with banddos / elastic / relax / eos)
 * a parser hook that forwards the protocol section into
   ``workflow_data``
 * the orchestrator below
@@ -21,6 +21,7 @@ from aiida_uranium_workflow.input_builders.phonopy import (
     AbacusPhonopyAdapter,
     FleurPhonopyAdapter,
     QePhonopyAdapter,
+    VaspPhonopyAdapter,
 )
 from aiida_uranium_workflow.schedulers.base import (
     register_workflow,
@@ -41,20 +42,22 @@ def parse_phonopy_protocol(protocol: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class PhonopyWorkflowOrchestrator(WorkflowOrchestrator):
-    """Orchestrator for the phonopy workflow (ABACUS / FLEUR / QE backends)."""
+    """Orchestrator for the phonopy workflow (ABACUS / VASP / FLEUR / QE)."""
 
     ADAPTERS = {
         "abacus": AbacusPhonopyAdapter,
+        "vasp": VaspPhonopyAdapter,
         "fleur": FleurPhonopyAdapter,
         "qe": QePhonopyAdapter,
     }
 
-    BACKENDS = ("abacus", "fleur", "qe")
+    BACKENDS = ("abacus", "vasp", "fleur", "qe")
 
     #: The per-backend SCF presets live in ``parameters/<backend>/scf.yml``
     #: (same files as banddos / elastic / relax / defects).
     PRESET_SUBKEYS: dict[str, str] = {
         "abacus": "scf",
+        "vasp": "scf",
         "fleur": "scf",
         "qe": "scf",
     }

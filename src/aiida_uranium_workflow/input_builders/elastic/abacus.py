@@ -9,7 +9,7 @@ lists from the workflow protocol (``parameters/elastic.yml``'s
 from __future__ import annotations
 
 from ..base import filter_scheduler_options, AdaptedInputs, SoftwareAdapter
-from typing import Any, Dict
+from typing import Any
 
 
 class AbacusElasticAdapter(SoftwareAdapter):
@@ -27,7 +27,9 @@ class AbacusElasticAdapter(SoftwareAdapter):
 
         params = copy.deepcopy(self.software_params["parameters"])
         options = filter_scheduler_options(
-            self.metadata.get("options", {}), entry_point=self._workchain_entry_point(), backend=self.name
+            self.metadata.get("options", {}),
+            entry_point=self._workchain_entry_point(),
+            backend=self.name,
         )
 
         # Fixed-lattice SCF: no cell relaxation, stress output on.
@@ -52,14 +54,10 @@ class AbacusElasticAdapter(SoftwareAdapter):
 
             KpointsData = DataFactory("core.array.kpoints")
             kpoints_mesh = KpointsData()
-            kpoints_mesh.set_kpoints_mesh(
-                list(self.software_params["kpoints_mesh"])
-            )
+            kpoints_mesh.set_kpoints_mesh(list(self.software_params["kpoints_mesh"]))
             base["kpoints"] = kpoints_mesh
         if "pseudo_family" in self.software_params:
-            base["pseudo_family"] = orm.Str(
-                str(self.software_params["pseudo_family"])
-            )
+            base["pseudo_family"] = orm.Str(str(self.software_params["pseudo_family"]))
 
         elastic_proto = dict(self.workflow_data.get("abacus", {}) or {})
         inputs: dict[str, Any] = {
@@ -74,17 +72,25 @@ class AbacusElasticAdapter(SoftwareAdapter):
         # positions only, cell fixed) — default True, the official ABACUS
         # elastic example's method. The protocol may set it to False for
         # clamped-ion constants.
-        inputs["relax_internal"] = orm.Bool(
-            elastic_proto.get("relax_internal", True)
+        inputs["relax_internal"] = orm.Bool(elastic_proto.get("relax_internal", True))
+        # Lattice pre-relaxation (abacus.relax, cell + ions) before the
+        # deformations — the protocol's ``abacus.lattice_relax`` block plus
+        # the ``relax_lattice`` / ``require_lattice_relax`` policy switches
+        # (same layout as the vasp block).
+        inputs["relax_lattice"] = orm.Bool(elastic_proto.get("relax_lattice", False))
+        inputs["require_lattice_relax"] = orm.Bool(
+            elastic_proto.get("require_lattice_relax", False)
         )
-        # Relaxation settings of the ``abacus.relax`` children that relax the
-        # internal coordinates under each strain. Same vocabulary as
-        # ``parameters/relax.yml``'s abacus block; without it the workchain
-        # falls back to its DEFAULT_RELAX_SETTINGS (positions / cg / 50 steps
-        # / force_cutoff 0.05).
-        relax_settings = elastic_proto.get("relax_settings")
-        if relax_settings:
-            inputs["relax_settings"] = orm.Dict(dict=relax_settings)
+        lattice_relax = elastic_proto.get("lattice_relax")
+        if lattice_relax:
+            inputs["relax_settings"] = orm.Dict(dict=lattice_relax)
+        # RelaxOptions of the strained-cell children — the protocol's
+        # ``abacus.child_relax`` block, same vocabulary as
+        # ``parameters/relax.yml``'s abacus block (and the vasp block).
+        # Without it the workchain falls back to DEFAULT_RELAX_SETTINGS.
+        child_relax = elastic_proto.get("child_relax")
+        if child_relax:
+            inputs["child_relax_settings"] = orm.Dict(dict=child_relax)
         return inputs
 
     def _prepare_workflow_inputs(self):

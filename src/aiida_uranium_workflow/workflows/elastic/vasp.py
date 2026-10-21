@@ -2,9 +2,11 @@
 
 Generates 24 deformed structures (Materials Project methodology:
 3 normal strains × ``norm_strains`` + 3 shear strains ×
-``shear_strains``), runs one ``VaspWorkChain`` per deformed cell, reads
-the final ionic step's 3×3 stress tensor (kB) from each child's ``misc``
-output, and fits the full 6×6 elastic tensor via pymatgen's
+``shear_strains``), runs one ``vasp.relax`` child per deformed cell
+(:class:`VaspRelaxWorkChain` — the plugin relax WorkChain, exactly like
+the ABACUS side uses ``abacus.relax``), reads the final ionic step's 3×3
+stress tensor (kB) from each child's ``misc`` output, and fits the full
+6×6 elastic tensor via pymatgen's
 ``ElasticTensor.from_independent_strains``. Aggregate moduli (K, G,
 anisotropy, Poisson) are derived from it.
 
@@ -20,16 +22,31 @@ optimises the cell (``../OPT/``, ``calculation cell-relax``) and only
 then generates the strained cells. Set ``relax_lattice=False`` to skip
 this step and deform the input structure as-is.
 
+The INCAR that goes into the ``vasp.relax`` child has the tags the
+plugin derives from ``relax_settings`` (NSW / IBRION / ISIF / EDIFFG)
+stripped: aiida-vasp applies the ``incar`` namespace *after* its relax
+set-functions, so the SCF preset's ``nsw: 0`` would silently turn the
+lattice relaxation into a static run — and a static VASP run omits the
+``structure`` output, which made the relax child exit 300 and aborted
+the whole workflow before a single strained cell was submitted.
+
+If the lattice relaxation still fails (convergence, wall-time, ...), the
+24 strained cells are **computed anyway** from the input structure and
+the result is flagged (``equilibrium_structure_source: input`` /
+``lattice_relaxed: false`` in ``output_parameters``) — set
+``require_lattice_relax=True`` to abort with ``ERROR_RELAX`` instead.
+
 By default the internal atomic coordinates are relaxed under each
-strain (``relax_internal`` — the child INCAR gets ``ISIF=2`` +
-``IBRION=2``, atoms relax while the cell stays fixed at the strained
-lattice). This gives the physically relevant "relaxed" elastic
-constants and matches the VASP counterpart of the official ABACUS
-elastic example (one ``calculation relax`` per deformed cell, i.e.
-``ISIF=2`` as the example's README notes). For cells without free
-internal coordinates (e.g. the 2-atom bcc U cell) the relaxation is a
-no-op. Set ``relax_internal=False`` for the clamped-ion constants
-(fixed-lattice SCF children, ``ISIF=4`` + ``IBRION=-1``).
+strain: each strained cell is a ``vasp.relax`` child with
+``relax_settings = {positions: True, shape: False, volume: False, …}``
+(ISIF=2, cell held at the strained lattice) taken from the protocol's
+``vasp.child_relax`` block — the same vocabulary as
+``parameters/relax.yml``. ``force_cutoff`` (= INCAR ``EDIFFG``) is the
+knob that decides how much of the internal-coordinate relaxation is
+captured: a ±1 % shear of a soft-mode metal (α-U) develops only
+~0.03 eV/Å, so a loose criterion leaves the cell clamped and the shear
+constants come out ~2× too stiff. Set ``relax_internal=False`` for the
+clamped-ion constants (one static SCF per cell, ``perform=False``).
 
 **Stress sign convention**: VASP's "total stress" (OUTCAR / vasprun
 ``<varray name="stress">``) reports **positive = compression**, the same
@@ -50,16 +67,20 @@ Layout::
     inputs
     ├── code / structure / parameters / potential_family /
     │   potential_mapping / kpoints (or kpoints_spacing) / calc
-    │       — VaspWorkChain inputs (``structure`` is overridden per
-    │         deformed cell; ``parameters.incar`` gains the ISIF /
-    │         IBRION / NSW of the chosen relax mode)
+    │       — VaspWorkChain inputs, forwarded to both the lattice-relax
+    │         and the strained cells (the relax-induced INCAR tags are
+    │         stripped from ``parameters``)
     ├── norm_strains    (List) — normal strain magnitudes
     ├── shear_strains   (List) — shear strain magnitudes
     ├── relax_internal  (Bool) — relax internal coords under strain (default True)
     ├── relax_lattice   (Bool) — full lattice relaxation (vasp.relax,
     │                            cell + ions) before the deformations (default True)
-    ├── relax_settings  (Dict) — VaspRelaxWorkChain RelaxOptions, e.g.
-    │                            {"force_cutoff": 0.03, "steps": 60}
+    ├── relax_settings  (Dict) — RelaxOptions of the *lattice* relax, e.g.
+    │                            {"positions": True, "volume": True, "steps": 60}
+    ├── child_relax_settings (Dict) — RelaxOptions of the strained cells,
+    │                            e.g. {"positions": True, "shape": False,
+    │                            "volume": False, "steps": 100,
+    │                            "force_cutoff": 0.005}
     outputs
     └── output_parameters (Dict) — elastic tensor + moduli (GPa)
 """
@@ -85,11 +106,38 @@ RelaxWorkChain = WorkflowFactory("vasp.v2.relax")
 #: is clamped (ISIF=4 + IBRION=-1, single point).
 _RELAX_INCAR: Dict[str, Any] = {"isif": 2, "ibrion": 2, "nsw": 50}
 _CLAMPED_INCAR: Dict[str, Any] = {"isif": 4, "ibrion": -1, "nsw": 0}
+#: INCAR tags ``VaspRelaxWorkChain`` derives from ``relax_settings``
+#: (NSW / IBRION / ISIF / EDIFFG). They are stripped from the SCF preset
+#: before it is handed to the ``vasp.relax`` child: aiida-vasp applies the
+#: ``incar`` namespace *after* its relax set-functions, so a leftover
+#: ``nsw: 0`` (the SCF presets carry it) silently turns the lattice
+#: relaxation into a static calculation — and a static VASP run omits the
+#: ``structure`` output (``VaspParser._compose_structure`` with
+#: ``omit_structure``), so the relax workchain then exits 300
+#: (``ERROR_MISSING_REQUIRED_OUTPUT``) and no strained cell is submitted.
+#: Same set as ``input_builders.relax.vasp.RELAX_CONTROLLED_INCAR_TAGS``.
+_RELAX_CONTROLLED_INCAR_TAGS = ("nsw", "ibrion", "isif", "ediffg")
 #: Force criterion (eV/Å) applied when the internal coordinates are
 #: relaxed under the strain — same order as the abacus.relax default
 #: force_cutoff (0.05 eV/Å) but tighter, since the stress (and hence
 #: the fitted tensor) is sensitive to the residual forces.
 _FORCE_CUTOFF_EV_ANG = -0.02
+#: Fallback RelaxOptions of the strained-cell children (used when the
+#: protocol has no ``vasp.child_relax`` block): one positions-only
+#: relaxation at the strained lattice with a *tight* force criterion — a
+#: ±1 % shear of α-U develops only ~0.03 eV/Å of internal force, so a loose
+#: criterion (0.02 eV/Å) stops after one ionic step and the shear constants
+#: come out clamped-ion (~2× too stiff).
+_DEFAULT_CHILD_RELAX_SETTINGS: Dict[str, Any] = {
+    "positions": True,
+    "shape": False,
+    "volume": False,
+    "algo": "cg",
+    "steps": 100,
+    "force_cutoff": 0.005,
+    "convergence_on": False,  # one relax run is enough for a strained cell
+    "residual_forces_check": False,
+}
 
 
 class VaspElasticWorkChain(WorkChain):
@@ -155,13 +203,44 @@ class VaspElasticWorkChain(WorkChain):
             ),
         )
         spec.input(
+            "require_lattice_relax",
+            valid_type=orm.Bool,
+            required=False,
+            help=(
+                "Abort with ``ERROR_RELAX`` when the ``vasp.relax`` child fails. "
+                "Default False: the 24 strained cells are still computed, with "
+                "the deformations applied to the *input* structure (the tensor "
+                "is then not on the equilibrium lattice — the output records "
+                "``equilibrium_structure_source: input``)."
+            ),
+        )
+        spec.input(
             "relax_settings",
             valid_type=orm.Dict,
             required=False,
             help=(
                 "VaspRelaxWorkChain RelaxOptions dict (e.g. "
-                "``{\"force_cutoff\": 0.03, \"steps\": 60}``). Defaults to "
+                '``{"force_cutoff": 0.03, "steps": 60}``). Defaults to '
                 "full cell + ions relaxation with the plugin's defaults."
+            ),
+        )
+        spec.input(
+            "child_relax_settings",
+            valid_type=orm.Dict,
+            required=False,
+            help=(
+                "``VaspRelaxWorkChain`` RelaxOptions of the strained-cell "
+                "children (the ``vasp.child_relax`` block of "
+                "``parameters/elastic.yml``), e.g. "
+                "``{'positions': True, 'shape': False, 'volume': False, "
+                "'steps': 100, 'force_cutoff': 0.005}``. The force criterion "
+                "decides how much of the internal-coordinate relaxation is "
+                "captured — the shear constants of a soft-mode metal (α-U: "
+                "C44/C55/C66) differ by ~2x between a clamped and a relaxed "
+                "internal coordinate. Defaults to a single positions-only "
+                "relaxation (cell fixed, 100 steps, 0.005 eV/Å); "
+                "``relax_internal=false`` overrides it with ``perform=False`` "
+                "(one static SCF)."
             ),
         )
 
@@ -190,17 +269,17 @@ class VaspElasticWorkChain(WorkChain):
         finished child when ``generate_deformations`` executes.
         """
         relax_lattice = (
-            self.inputs.relax_lattice.value
-            if "relax_lattice" in self.inputs
-            else True
+            self.inputs.relax_lattice.value if "relax_lattice" in self.inputs else True
         )
         if not relax_lattice:
             self.report("skipping lattice relaxation (relax_lattice=False)")
             return
 
         base = self.exposed_inputs(ChildWorkChain, agglomerate=True)
+        vasp_ns: Dict[str, Any] = {k: v for k, v in base.items() if k != "structure"}
+        vasp_ns["parameters"] = self._relax_child_parameters(base.get("parameters"))
         relax_inputs: Dict[str, Any] = {
-            "vasp": {k: v for k, v in base.items() if k != "structure"},
+            "vasp": vasp_ns,
             "structure": self.inputs.structure,
             # ``relax_settings`` is a *required* input of VaspRelaxWorkChain
             # and, importantly, the workchain uses the dict verbatim as its
@@ -222,6 +301,30 @@ class VaspElasticWorkChain(WorkChain):
             f"submitted lattice relaxation {running.process_label} pk={running.pk}"
         )
         self.to_context(lattice_relax=running)
+
+    @staticmethod
+    def _relax_child_parameters(parameters: Any) -> orm.Dict:
+        """SCF parameters for the ``vasp.relax`` child, minus the relax tags.
+
+        The ``incar`` namespace is applied last by aiida-vasp's
+        ``ParametersMassage``, so an INCAR tag the plugin derives from
+        ``relax_settings`` would silently win: the SCF presets carry
+        ``nsw: 0`` (they are meant for single-point runs), which turns the
+        "lattice relaxation" into a static calculation — and a static VASP
+        run produces no ``structure`` output, so ``VaspRelaxWorkChain``
+        exits 300 and the strained cells are never submitted. Drop
+        :data:`_RELAX_CONTROLLED_INCAR_TAGS` here and let
+        ``relax_settings`` own them.
+        """
+        if hasattr(parameters, "get_dict"):
+            params = parameters.get_dict()
+        else:
+            params = dict(parameters or {})
+        incar = dict(params.get("incar", {}) or {})
+        for tag in _RELAX_CONTROLLED_INCAR_TAGS:
+            incar.pop(tag, None)
+        params["incar"] = incar
+        return orm.Dict(dict=params)
 
     def _relax_settings_node(self) -> orm.Dict:
         """Return the full VaspRelaxWorkChain RelaxOptions dict.
@@ -267,15 +370,35 @@ class VaspElasticWorkChain(WorkChain):
         )
 
         relax_lattice = (
-            self.inputs.relax_lattice.value
-            if "relax_lattice" in self.inputs
-            else True
+            self.inputs.relax_lattice.value if "relax_lattice" in self.inputs else True
         )
         if relax_lattice:
             relax = getattr(self.ctx, "lattice_relax", None)
             if relax is None or not relax.is_finished_ok:
-                self.report("lattice relaxation did not finish successfully")
-                return self.exit_codes.ERROR_RELAX
+                if relax is None:
+                    message = "lattice relaxation was never submitted"
+                else:
+                    message = (
+                        f"lattice relaxation <{relax.pk}> finished with "
+                        f"exit status {relax.exit_status}"
+                    )
+                require = (
+                    self.inputs.require_lattice_relax.value
+                    if "require_lattice_relax" in self.inputs
+                    else False
+                )
+                if require:
+                    self.report(f"{message} — aborting (require_lattice_relax=True)")
+                    return self.exit_codes.ERROR_RELAX
+                # Still compute the 24 strained cells: the elastic tensor is
+                # a strain response, so an unrelaxed equilibrium lattice
+                # yields a usable tensor. It is *not* the equilibrium-lattice
+                # result though — flag it in the report and in the outputs.
+                self.report(
+                    f"{message} — CONTINUING with the input structure (NOT "
+                    "relaxed); the reported tensor is not on the equilibrium "
+                    "lattice. Set require_lattice_relax=true to abort instead."
+                )
 
         norm = list(self.inputs.norm_strains.get_list())
         shear = list(self.inputs.shear_strains.get_list())
@@ -285,21 +408,30 @@ class VaspElasticWorkChain(WorkChain):
         self.ctx.deformation_labels = [d[2] for d in deformations]
 
         structure = self._equilibrium_structure()
-        deformed = [
-            apply_deformation_matrix(structure, d[1]) for d in deformations
-        ]
+        self.ctx.equilibrium_structure_source = (
+            "lattice_relax" if structure is not self.inputs.structure else "input"
+        )
+        deformed = [apply_deformation_matrix(structure, d[1]) for d in deformations]
         self.ctx.deformed_structures = deformed
         self.report(
             f"generated {len(deformed)} deformed structures "
+            f"from the {self.ctx.equilibrium_structure_source} structure "
             f"(norm={norm}, shear={shear})"
         )
 
     def submit_scfs(self):
-        """Submit one VaspWorkChain per deformed structure.
+        """Submit one ``vasp.relax`` child per deformed structure.
 
-        The child INCAR is extended with the ISIF / IBRION / NSW of the
-        chosen relax mode; everything else comes from the exposed
-        VaspWorkChain inputs.
+        Each strained cell is a ``VaspRelaxWorkChain`` — the plugin's relax
+        WorkChain, exactly like the ABACUS side uses ``abacus.relax`` — so
+        the ionic settings are expressed with **RelaxOptions**
+        (``positions`` / ``steps`` / ``force_cutoff`` / …) instead of raw
+        INCAR tags and aiida-vasp derives the INCAR itself. The cell is held
+        at the strained lattice (``shape`` / ``volume`` off), so the relax
+        WorkChain performs no final single-point calculation.
+
+        ``relax_internal=false`` (clamped-ion constants) runs the same child
+        with ``perform=False`` — a single static SCF.
         """
         base = self.exposed_inputs(ChildWorkChain, agglomerate=True)
         relax_internal = (
@@ -308,39 +440,39 @@ class VaspElasticWorkChain(WorkChain):
             else True
         )
 
-        for idx, structure in enumerate(self.ctx.deformed_structures):
-            child_inputs = dict(base)
-            child_inputs["structure"] = structure
-            child_inputs["parameters"] = self._relaxed_parameters(
-                base.get("parameters", {}), relax_internal
+        if relax_internal:
+            settings = (
+                dict(self.inputs.child_relax_settings.get_dict())
+                if "child_relax_settings" in self.inputs
+                else dict(_DEFAULT_CHILD_RELAX_SETTINGS)
             )
-            child_inputs["metadata"] = {
-                "label": f"elastic_{idx:03d}_{self.ctx.deformation_labels[idx]}",
-                "description": (
-                    "Position-relaxed SCF of a deformed structure"
-                    if relax_internal
-                    else "Fixed-lattice SCF of a deformed structure"
-                ),
+        else:
+            # No relaxation: one static SCF at the strained lattice.
+            settings = {"perform": False}
+
+        # SCF parameters without the relax-controlled INCAR tags (a preset
+        # ``nsw: 0`` would otherwise win over ``relax_settings``).
+        vasp_ns = {k: v for k, v in base.items() if k != "structure"}
+        vasp_ns["parameters"] = self._relax_child_parameters(base.get("parameters"))
+
+        for idx, structure in enumerate(self.ctx.deformed_structures):
+            child_inputs = {
+                "structure": structure,
+                "vasp": dict(vasp_ns),
+                "relax_settings": orm.Dict(dict=settings),
+                "metadata": {
+                    "label": f"elastic_{idx:03d}_{self.ctx.deformation_labels[idx]}",
+                    "description": (
+                        "Positions-relaxed strained cell (vasp.relax, cell "
+                        "fixed by the strain)"
+                        if relax_internal
+                        else "Fixed-lattice SCF of a deformed structure"
+                    ),
+                },
             }
-            running = self.submit(ChildWorkChain, **child_inputs)
+            running = self.submit(RelaxWorkChain, **child_inputs)
             self.report(f"submitted {running.process_label} pk={running.pk} for {idx}")
             self.to_context(**{f"scf_{idx}": running})
-
-    @staticmethod
-    def _relaxed_parameters(parameters: Any, relax_internal: bool) -> Dict[str, Any]:
-        """Extend the child INCAR with the ISIF / IBRION / NSW of the relax mode."""
-        if hasattr(parameters, "get_dict"):
-            params = parameters.get_dict()
-        else:
-            params = dict(parameters)
-        incar = dict(params.get("incar", {}))
-        if relax_internal:
-            incar.setdefault("ediffg", _FORCE_CUTOFF_EV_ANG)
-            incar.update(_RELAX_INCAR)
-        else:
-            incar.update(_CLAMPED_INCAR)
-        params["incar"] = incar
-        return params
 
     def gather_results(self):
         """Collect stresses and fit the elastic tensor."""
@@ -385,6 +517,13 @@ class VaspElasticWorkChain(WorkChain):
                         ],
                         "stress_tensors": [list(s) for s in stress_tensors],
                         "crystal_system": crystal_system_of(self.inputs.structure),
+                        # Which lattice the deformations were applied to:
+                        # "lattice_relax" (equilibrium cell from vasp.relax) or
+                        # "input" (the input cell — either relax_lattice=False
+                        # or the lattice relaxation failed / degraded).
+                        "equilibrium_structure_source": getattr(
+                            self.ctx, "equilibrium_structure_source", "input"
+                        ),
                     }
                 ),
             ),
@@ -411,4 +550,10 @@ def _combine_elastic_result(fit_data):
         data["stress_tensors"],
         crystal_system=data.get("crystal_system"),
     )
+    # Carry the equilibrium-lattice provenance into the result so a report
+    # can tell an equilibrium-lattice tensor from one fitted on the
+    # unrelaxed input cell.
+    source = data.get("equilibrium_structure_source", "input")
+    result["equilibrium_structure_source"] = source
+    result["lattice_relaxed"] = source == "lattice_relax"
     return orm.Dict(dict=result)

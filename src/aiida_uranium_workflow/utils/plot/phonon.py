@@ -161,12 +161,33 @@ def _resolve_labels(bands_node, band_labels: Optional[Sequence[str]]):
             return _segment_boundaries(n_kpts, len(labels)), labels
 
     raw = bands_node.base.attributes.get("labels")
+    numbers = bands_node.base.attributes.get("label_numbers")
     if isinstance(raw, list) and len(raw) >= 2:
-        # aiida-phonopy stores either plain label strings (positions are
-        # inferred from the path geometry — the high-symmetry points are
-        # where the q-path changes direction) or [qpoint_index, label]
-        # pairs.
+        # aiida-phonopy stores plain label strings *plus* the q-point index
+        # of every label in ``label_numbers`` (or, in some paths, explicit
+        # [qpoint_index, label] pairs).
         if all(isinstance(item, str) for item in raw):
+            if isinstance(numbers, (list, tuple)) and len(numbers) == len(raw):
+                # Use the recorded positions: the geometric/heuristic guesses
+                # put the ticks at the wrong q-points for paths whose
+                # high-symmetry points do not fall on a direction change
+                # (e.g. the Cmcm 15-label path: one label per arc corner plus
+                # the "?" placeholder of the connector start).
+                explicit_pos: List[int] = []
+                explicit_labels: List[str] = []
+                valid = True
+                for label, number in zip(raw, numbers):
+                    symbol = str(label)
+                    if symbol in ("", "?"):
+                        continue
+                    try:
+                        explicit_pos.append(int(number))
+                    except (TypeError, ValueError):
+                        valid = False
+                        break
+                    explicit_labels.append(symbol)
+                if valid and len(explicit_labels) >= 2:
+                    return explicit_pos, explicit_labels
             labels = [lb for lb in raw if lb not in ("", "?")]
             if len(labels) >= 2:
                 kpts = np.asarray(bands_node.get_kpoints())

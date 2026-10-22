@@ -482,3 +482,49 @@ class TestFleurPhonopyAdapter:
         assert "inpgen" in inputs["base"]
         assert "phonopy_code" in inputs
         assert inputs["supercell_matrix"].get_list() == [2, 2, 2]
+
+
+class TestResolveLabelsFromLabelNumbers:
+    """aiida-phonopy stores plain label strings plus ``label_numbers``.
+
+    Regression (4-phonopy/abacus, pk 3b5e1c2c): a 15-label Cmcm q-path kept
+    its labels as strings only, so the ticks fell back to the geometric /
+    evenly-split guess and did not line up with the spectrum. ``label_numbers``
+    carries the exact q-point index of every label — use it.
+    """
+
+    @staticmethod
+    def _bands(nk, labels, numbers, kpts=None):
+        import numpy as np
+
+        class _Bands:
+            class base:
+                pass
+
+            def get_kpoints(self):
+                return np.zeros((nk, 3)) if kpts is None else kpts
+
+        _Bands.base.attributes = {"labels": labels, "label_numbers": numbers}
+        return _Bands()
+
+    def test_positions_come_from_label_numbers(self):
+        numbers = [0, 50, 101, 102, 152, 203, 254, 255, 305, 356, 357]
+        labels = ["$\\Gamma$", "Y", "C_0", "?", "$\\Gamma$", "Z", "A_0", "E_0", "T", "Y", "$\\Gamma$"]
+        pos, text = _resolve_labels(self._bands(561, labels, numbers), None)
+        assert text == ["$\\Gamma$", "Y", "C_0", "$\\Gamma$", "Z", "A_0", "E_0", "T", "Y", "$\\Gamma$"]
+        # the "?" placeholder is dropped together with its index
+        assert pos == [0, 50, 101, 152, 203, 254, 255, 305, 356, 357]
+
+    def test_falls_back_to_geometry_without_numbers(self):
+        labels = ["$\\Gamma$", "Y", "C_0", "$\\Gamma$"]
+        pos, text = _resolve_labels(self._bands(400, labels, None), None)
+        assert text == labels
+        assert len(pos) == len(text)
+
+    def test_explicit_band_labels_still_win(self):
+        # An explicit label list (spec / CLI) must not be overridden by the
+        # node's own labels.
+        bands = self._bands(400, ["$\\Gamma$", "Y"], [0, 100])
+        pos, text = _resolve_labels(bands, ["Γ", "H", "N", "Γ"])
+        assert text == ["Γ", "H", "N", "Γ"]
+        assert pos == _segment_boundaries(400, 4)

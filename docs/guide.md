@@ -412,6 +412,14 @@ spec 里 `"backend": "vasp"`：
 > （几十到上百 eV），费米面附近几乎取不到点，画出来的 DOS 是一段折线。3001 点时
 > 60 eV 窗口约 0.02 eV 间距，够看精细结构；需要更密就把它调到 6000 或更大。
 >
+> **ABACUS 的 DOS 能量网格 = DOS 那一步 nscf 计算的本征值范围**：ABACUS 默认
+> `nbands = nelec/2 + 10`（例：α-U 4 原子胞 nelec=28 → 24 条带），10 条空带只铺到
+> E_F+3 eV 左右，DOS 曲线（和能带图的上界）也就停在 +3 eV，`figure.xlim` 再大也没数据。
+> 想画到 ±10 eV 就给预设加 `nbands`（例如 `nbands: 48`：14 占据 + 34 空带，本征值
+> 可到 E_F+45 eV）。本仓库的 `aiida-uranium-alpha/parameters/abacus/scf.yml` 里有一个
+> 现成的 `lcao_banddos` 预设（= `lcao` + `nbands: 48`），banddos 的 input.json 写
+> `"abacus": {"scf": "lcao_banddos"}` 即可。
+>
 > **坑：** aiida-vasp 的 `run_bands_dos` 在 `run_dos: true` 但**没有** `dos` 命名空间时，
 > 自己兜底构造的 `settings` 是普通 dict，随后 `update_nested_dict_node` 会抛
 > `AttributeError: 'AttributeDict' object has no attribute 'get_dict'`，整个

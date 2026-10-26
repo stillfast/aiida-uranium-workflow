@@ -90,24 +90,92 @@ def _young_modulus_gpa(output_params: Dict[str, Any]):
     return None
 
 
+def stability_report(output_params: Dict[str, Any]):
+    """Return ``(stable, min_eigenvalue, cubic_born)`` for the stored tensor.
+
+    Prefers the values recorded by the workchain (``stable`` /
+    ``min_eigenvalue_gpa`` / ``born_cubic``); recomputes them from
+    ``elastic_tensor_gpa`` for nodes created before those keys existed, so
+    old reports get the same verdict.
+    """
+    if "stable" in output_params:
+        return (
+            bool(output_params["stable"]),
+            output_params.get("min_eigenvalue_gpa"),
+            output_params.get("born_cubic") or {},
+        )
+
+    tensor = output_params.get("elastic_tensor_gpa")
+    if not tensor:
+        return None, None, {}
+    import numpy as np
+
+    try:
+        c = np.asarray(tensor, dtype=float)
+        c = (c + c.T) / 2.0
+        eigenvalues = np.linalg.eigvalsh(c)
+    except (TypeError, ValueError):
+        return None, None, {}
+    min_eigenvalue = float(eigenvalues.min())
+    born = {}
+    c11, c12, c44 = float(c[0, 0]), float(c[0, 1]), float(c[3, 3])
+    if (
+        abs(c[0, 0] - c[1, 1]) < 1e-3 * (abs(c11) + 1.0)
+        and abs(c[0, 0] - c[2, 2]) < 1e-3 * (abs(c11) + 1.0)
+        and abs(c[0, 1] - c[1, 2]) < 1e-3 * (abs(c12) + 1.0)
+        and abs(c[0, 1] - c[0, 2]) < 1e-3 * (abs(c12) + 1.0)
+        and abs(c[3, 3] - c[4, 4]) < 1e-3 * (abs(c44) + 1.0)
+    ):
+        born = {
+            "C11_minus_C12": c11 - c12,
+            "C11_plus_2C12": c11 + 2.0 * c12,
+            "C44": c44,
+        }
+    return bool(min_eigenvalue > 1e-6), min_eigenvalue, born
+
+
 def generate_summary_table(output_params: Dict[str, Any], workflow_type: str) -> str:
     """Render bulk / shear moduli + derived properties."""
     method = output_params.get("method", "?")
+    stable, min_eigenvalue, cubic_born = stability_report(output_params)
+    # ``flag`` marks the rows that are meaningless for an unstable tensor.
+    flag = "" if stable is not False else " ⚠️"
+    unstable_note = ""
+    if stable is False:
+        detail = ""
+        if cubic_born:
+            detail = (
+                f" (C11−C12 = {_fmt(cubic_born.get('C11_minus_C12'))} GPa, "
+                f"C44 = {_fmt(cubic_born.get('C44'))} GPa, "
+                f"C11+2C12 = {_fmt(cubic_born.get('C11_plus_2C12'))} GPa)"
+            )
+        unstable_note = (
+            f"| stability | **mechanically UNSTABLE** — the elastic tensor is "
+            f"not positive definite (min eigenvalue {_fmt(min_eigenvalue)} GPa)"
+            f"{detail}; the Born criterion C' = (C11−C12)/2 > 0 is violated, "
+            "so the Reuss shear modulus (4(S11−S12)+3S44 ≈ 0) and everything "
+            "derived from it (G_VRH, Y_VRH, Poisson ratio, anisotropy) are "
+            "not physically meaningful — report the Cij only, or re-evaluate "
+            "at a (meta)stable structure |"
+        )
+
     lines = [
         "| Property | Value |",
         "| --- | --- |",
         f"| backend | {workflow_type} |",
         f"| method | {method} |",
         f"| Bulk modulus K_VRH | {_fmt(output_params.get('bulk_modulus_gpa'))} GPa |",
-        f"| Shear modulus G_VRH | {_fmt(output_params.get('shear_modulus_gpa'))} GPa |",
-        f"| Young modulus Y_VRH | {_fmt(_young_modulus_gpa(output_params))} GPa |",
+        f"| Shear modulus G_VRH{flag} | {_fmt(output_params.get('shear_modulus_gpa'))} GPa |",
+        f"| Young modulus Y_VRH{flag} | {_fmt(_young_modulus_gpa(output_params))} GPa |",
         f"| K_Voigt | {_fmt(output_params.get('bulk_modulus_voigt'))} GPa |",
         f"| K_Reuss | {_fmt(output_params.get('bulk_modulus_reuss'))} GPa |",
-        f"| G_Voigt | {_fmt(output_params.get('shear_modulus_voigt'))} GPa |",
-        f"| G_Reuss | {_fmt(output_params.get('shear_modulus_reuss'))} GPa |",
-        f"| Universal anisotropy | {_fmt(output_params.get('universal_anisotropy'))} |",
-        f"| Poisson ratio | {_fmt(output_params.get('poisson_ratio'))} |",
+        f"| G_Voigt{flag} | {_fmt(output_params.get('shear_modulus_voigt'))} GPa |",
+        f"| G_Reuss{flag} | {_fmt(output_params.get('shear_modulus_reuss'))} GPa |",
+        f"| Universal anisotropy{flag} | {_fmt(output_params.get('universal_anisotropy'))} |",
+        f"| Poisson ratio{flag} | {_fmt(output_params.get('poisson_ratio'))} |",
     ]
+    if unstable_note:
+        lines.append(unstable_note)
     source = output_params.get("equilibrium_structure_source")
     if source is not None:
         label = {

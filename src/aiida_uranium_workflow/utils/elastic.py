@@ -487,9 +487,37 @@ def _elastic_result(ct, method: str) -> Dict[str, Any]:
         except Exception:
             return None
 
+    # Mechanical stability (Born criteria): a positive-definite 6x6 tensor.
+    # A bcc-U-like tensor with C11 < C12 has two negative eigenvalues, and
+    # the Reuss shear modulus denominator 4(S11-S12)+3S44 then nearly
+    # cancels — G_Reuss / Y / the Poisson ratio become enormous or negative
+    # and depend on the Cij at the 1e-2 GPa level. Flag it so the report does
+    # not present those numbers as physical.
+    eigenvalues = np.linalg.eigvalsh(c_voigt)
+    min_eigenvalue = float(eigenvalues.min())
+    stable = bool(min_eigenvalue > 1e-6)
+    cubic_born: Dict[str, float] = {}
+    c11, c12, c44 = float(c_voigt[0, 0]), float(c_voigt[0, 1]), float(c_voigt[3, 3])
+    if (
+        abs(c_voigt[0, 0] - c_voigt[1, 1]) < 1e-3 * (abs(c11) + 1.0)
+        and abs(c_voigt[0, 0] - c_voigt[2, 2]) < 1e-3 * (abs(c11) + 1.0)
+        and abs(c_voigt[0, 1] - c_voigt[1, 2]) < 1e-3 * (abs(c12) + 1.0)
+        and abs(c_voigt[0, 1] - c_voigt[0, 2]) < 1e-3 * (abs(c12) + 1.0)
+        and abs(c_voigt[3, 3] - c_voigt[4, 4]) < 1e-3 * (abs(c44) + 1.0)
+        and abs(c_voigt[3, 3] - c_voigt[5, 5]) < 1e-3 * (abs(c44) + 1.0)
+    ):
+        cubic_born = {
+            "C11_minus_C12": c11 - c12,  # > 0 required (C' = (C11-C12)/2)
+            "C11_plus_2C12": c11 + 2.0 * c12,  # > 0
+            "C44": c44,  # > 0
+        }
+
     return {
         "method": method,
         "elastic_tensor_gpa": c_voigt.tolist(),
+        "stable": stable,
+        "min_eigenvalue_gpa": min_eigenvalue,
+        **({"born_cubic": cubic_born} if cubic_born else {}),
         "bulk_modulus_gpa": _safe(lambda: ct.k_vrh),
         "shear_modulus_gpa": _safe(lambda: ct.g_vrh),
         # ``y_mod`` is returned in Pa (SI) while k_vrh / g_vrh come back

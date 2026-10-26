@@ -376,3 +376,119 @@ class TestElasticSchedulerPresetNames:
         assert "vasp" in ElasticWorkflowOrchestrator.ADAPTERS
         assert "qe" in ElasticWorkflowOrchestrator.ADAPTERS
         assert "qe" in ElasticWorkflowOrchestrator.BACKENDS
+
+
+class TestElasticStability:
+    """Born stability check: an unstable tensor must be flagged.
+
+    Case 3-elastic (bcc-U, gamma project): C11 < C12 for both VASP and
+    ABACUS, i.e. C' = (C11-C12)/2 < 0. The Reuss shear modulus denominator
+    4(S11-S12)+3S44 then nearly cancels, so G_Reuss/G_VRH/Y flip between
+    hundreds of GPa (VASP 822/417/611) and (ABACUS 200/104/247) for tensors
+    that differ by only ~10 GPa — the moduli are not physical and must be
+    flagged, not silently reported.
+    """
+
+    #: bcc-U-like unstable tensor (C11 < C12), GPa.
+    UNSTABLE = np.array(
+        [
+            [94.31, 151.89, 151.89, 0.0, 0.0, 0.0],
+            [151.89, 94.31, 151.89, 0.0, 0.0, 0.0],
+            [151.89, 151.89, 94.31, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 39.71, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 39.71, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 39.71],
+        ]
+    )
+
+    def test_result_flags_unstable_tensor(self):
+        from pymatgen.analysis.elasticity import ElasticTensor
+
+        from aiida_uranium_workflow.utils.elastic import _elastic_result
+
+        res = _elastic_result(ElasticTensor.from_voigt(self.UNSTABLE), "stress")
+        assert res["stable"] is False
+        assert res["min_eigenvalue_gpa"] == pytest.approx(-57.58, abs=0.01)
+        assert res["born_cubic"]["C11_minus_C12"] == pytest.approx(-57.58, abs=0.01)
+        # The moduli are still computed (unchanged behaviour), but they are
+        # the unstable-tensor VRH numbers — hence the flag.
+        assert res["shear_modulus_gpa"] == pytest.approx(417.4, abs=0.5)
+
+    def test_result_flags_stable_tensor(self):
+        from pymatgen.analysis.elasticity import ElasticTensor
+
+        from aiida_uranium_workflow.utils.elastic import _elastic_result
+
+        res = _elastic_result(ElasticTensor.from_voigt(_known_cubic()), "stress")
+        assert res["stable"] is True
+        assert res["min_eigenvalue_gpa"] > 0
+
+    def test_report_warns_about_unstable_tensor(self):
+        from aiida_uranium_workflow.utils.report.elastic import (
+            generate_summary_table,
+        )
+
+        table = generate_summary_table(
+            {
+                "method": "stress",
+                "elastic_tensor_gpa": self.UNSTABLE.tolist(),
+                "bulk_modulus_gpa": 132.697,
+                "shear_modulus_gpa": 416.933,
+                "young_modulus_gpa": 610.942,
+                "bulk_modulus_voigt": 132.697,
+                "bulk_modulus_reuss": 132.697,
+                "shear_modulus_voigt": 12.308,
+                "shear_modulus_reuss": 821.559,
+                "universal_anisotropy": -4.925,
+                "poisson_ratio": -0.267,
+                "stable": False,
+                "min_eigenvalue_gpa": -57.581,
+                "born_cubic": {
+                    "C11_minus_C12": -57.581,
+                    "C11_plus_2C12": 398.092,
+                    "C44": 39.707,
+                },
+            },
+            "vasp",
+        )
+        assert "**mechanically UNSTABLE**" in table
+        assert "C11−C12 = -57.581 GPa" in table
+        assert "not physically meaningful" in table
+        # the meaningless rows are marked
+        assert "| Shear modulus G_VRH ⚠️ |" in table
+        assert "| Poisson ratio ⚠️ |" in table
+
+    def test_old_node_stability_is_recomputed(self):
+        from aiida_uranium_workflow.utils.report.elastic import (
+            generate_summary_table,
+            stability_report,
+        )
+
+        # nodes created before the "stable" key existed
+        old = {"elastic_tensor_gpa": self.UNSTABLE.tolist()}
+        stable, min_eig, born = stability_report(old)
+        assert stable is False
+        assert min_eig == pytest.approx(-57.58, abs=0.01)
+        assert born["C11_minus_C12"] == pytest.approx(-57.58, abs=0.01)
+        table = generate_summary_table(old, "abacus")
+        assert "**mechanically UNSTABLE**" in table
+
+    def test_stable_tensor_has_no_warning(self):
+        from aiida_uranium_workflow.utils.report.elastic import (
+            generate_summary_table,
+        )
+
+        table = generate_summary_table(
+            {
+                "method": "stress",
+                "elastic_tensor_gpa": _known_cubic().tolist(),
+                "bulk_modulus_gpa": 146.667,
+                "shear_modulus_gpa": 51.0,
+                "young_modulus_gpa": 131.0,
+                "stable": True,
+                "min_eigenvalue_gpa": 60.0,
+            },
+            "abacus",
+        )
+        assert "UNSTABLE" not in table
+        assert "⚠️" not in table
